@@ -5,40 +5,46 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Netflix Access Hub</title>
     
-    <!-- THƯ VIỆN GIAO DIỆN -->
+    <!-- 1. THƯ VIỆN (CDN) -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     
-    <!-- REACT & BABEL -->
+    <!-- 2. REACT & BABEL -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    <!-- FONT CHỮ -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <!-- 3. FONT -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;900&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
 
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #050505; color: white; overflow-x: hidden; }
         
-        .glass-card {
-            background: rgba(255, 255, 255, 0.05);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 24px;
-            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
-            transition: all 0.3s ease;
+        /* Glassmorphism Cao Cấp */
+        .glass-panel {
+            background: rgba(20, 20, 20, 0.6);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
         }
-        
-        .animate-fade-in { animation: fadeIn 0.5s ease-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        
-        .animate-pulse-slow { animation: pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
-        @keyframes pulse { 0%, 100% { opacity: .4; } 50% { opacity: .1; } }
 
-        .hidden-force { display: none !important; }
+        /* Animations */
+        .animate-enter { animation: enter 0.6s cubic-bezier(0.16, 1, 0.3, 1); }
+        @keyframes enter { from { opacity: 0; transform: scale(0.95) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
         
-        ::-webkit-scrollbar { width: 0px; background: transparent; }
+        /* Ẩn thanh cuộn */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #000; }
+        ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+
+        /* Gradient Text */
+        .text-gradient {
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-image: linear-gradient(to right, #fff, #999);
+        }
     </style>
 </head>
 <body class="selection:bg-red-500/30">
@@ -49,442 +55,437 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
-        const { useState, useEffect } = React;
+        const { useState, useEffect, useMemo } = React;
 
-        // --- CẤU HÌNH ---
+        // --- CẤU HÌNH HỆ THỐNG ---
         const EXPIRATION_MINUTES = 16;
+        const DEMO_USER = 'admin';
+        const DEMO_PASS = '2025';
 
-        // --- UTILS ---
-        const formatNumber = (num) => {
-            try { return new Intl.NumberFormat('vi-VN').format(num); } catch { return "0"; }
-        };
-
-        const formatFullDateTime = (dateStr) => {
-            try {
-                const date = dateStr ? new Date(dateStr) : new Date();
-                if (isNaN(date.getTime())) return "Đang cập nhật...";
-                return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')} ngày ${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`;
-            } catch (e) { return "Đang cập nhật..."; }
-        };
-
-        const checkIsExpired = (dateStr) => {
-            try {
-                if (!dateStr) return false;
-                const date = new Date(dateStr);
-                if (isNaN(date.getTime())) return false;
-                const diff = new Date() - date;
-                const diffMinutes = diff / 1000 / 60;
-                return diffMinutes >= EXPIRATION_MINUTES;
-            } catch (e) { return false; }
-        };
-
-        // --- COMPONENT ICON (FIXED SVG RENDER) ---
-        // Hàm này vẽ trực tiếp SVG để tránh xung đột DOM
+        // --- COMPONENT ICON (SIÊU TỐI ƯU - KHÔNG LAG) ---
+        // Vẽ trực tiếp SVG từ dữ liệu Lucide thay vì quét DOM
         const Icon = ({ name, size = 24, className = "" }) => {
-            // Chuyển tên icon từ 'kebab-case' sang 'PascalCase' (ví dụ: party-popper -> PartyPopper)
-            const iconName = name
-                .split('-')
-                .map(part => part.charAt(0).toUpperCase() + part.slice(1))
-                .join('');
-            
-            const iconData = lucide.icons[iconName];
+            // Chuyển kebab-case sang PascalCase (vd: calendar-days -> CalendarDays)
+            const pascalName = name.split('-').map(n => n.charAt(0).toUpperCase() + n.slice(1)).join('');
+            const iconData = lucide.icons[pascalName];
 
-            // Nếu không tìm thấy icon, render thẻ i dự phòng
-            if (!iconData) return <i data-lucide={name} style={{ width: size, height: size }} className={className}></i>;
+            if (!iconData) return null;
 
             return (
                 <svg 
                     xmlns="http://www.w3.org/2000/svg" 
-                    width={size} 
-                    height={size} 
+                    width={size} height={size} 
                     viewBox="0 0 24 24" 
                     fill="none" 
                     stroke="currentColor" 
                     strokeWidth="2" 
                     strokeLinecap="round" 
                     strokeLinejoin="round" 
-                    className={`lucide lucide-${name} ${className}`}
+                    className={className}
                 >
                     {iconData.map((child, index) => {
-                        const [tagName, attrs] = child;
-                        return React.createElement(tagName, { ...attrs, key: index });
+                        const [tag, attrs] = child;
+                        return React.createElement(tag, { ...attrs, key: index });
                     })}
                 </svg>
             );
         };
 
-        // --- COMPONENTS ---
-        const NetflixIOSIcon = ({ className = "" }) => (
-            <div className={`w-10 h-10 rounded-[22%] relative overflow-hidden shadow-2xl border border-white/10 bg-black flex-shrink-0 ${className}`}>
-                <img src="https://upload.wikimedia.org/wikipedia/commons/f/ff/Netflix-new-icon.png" alt="N" className="w-full h-full object-cover relative z-10" />
-                <div className="absolute inset-0 bg-gradient-to-br from-white/10 via-transparent to-transparent pointer-events-none z-20"></div>
+        // --- COMPONENTS GIAO DIỆN ---
+        const NetflixLogo = () => (
+            <div className="w-12 h-12 rounded-[22%] relative overflow-hidden shadow-2xl border border-white/10 bg-black flex-shrink-0 group cursor-pointer">
+                <img src="https://upload.wikimedia.org/wikipedia/commons/f/ff/Netflix-new-icon.png" className="w-full h-full object-cover relative z-10 group-hover:scale-110 transition-transform duration-500" />
+                <div className="absolute inset-0 bg-gradient-to-br from-white/20 via-transparent to-transparent pointer-events-none z-20"></div>
             </div>
         );
 
-        const GlassCard = ({ children, className = "" }) => (
-            <div className={`glass-card ${className}`}>{children}</div>
-        );
-
-        const EventCard = ({ event, isHero }) => {
+        // --- NEW EVENT CARD (ĐỒNG NHẤT & THẲNG HÀNG) ---
+        const EventCard = ({ event }) => {
+            // Tính toán thời gian (Logic trong component để update real-time)
             const calculateTimeLeft = () => {
-                try {
-                    const diff = +new Date(event.date) - +new Date();
-                    if (diff > 0) return {
-                        days: Math.floor(diff / (1000 * 60 * 60 * 24)),
-                        hours: Math.floor((diff / (1000 * 60 * 60)) % 24),
-                        minutes: Math.floor((diff / 1000 / 60) % 60),
-                        seconds: Math.floor((diff / 1000) % 60)
-                    };
-                    return { days: 0, hours: 0, minutes: 0, seconds: 0 };
-                } catch { return { days: 0, hours: 0, minutes: 0, seconds: 0 }; }
+                const diff = +new Date(event.date) - +new Date();
+                if (diff > 0) return {
+                    days: Math.floor(diff / (1000 * 60 * 60 * 24)),
+                    hours: Math.floor((diff / (1000 * 60 * 60)) % 24),
+                    minutes: Math.floor((diff / 1000 / 60) % 60),
+                    seconds: Math.floor((diff / 1000) % 60)
+                };
+                return { days: 0, hours: 0, minutes: 0, seconds: 0 };
             };
+            
             const [timeLeft, setTimeLeft] = useState(calculateTimeLeft());
+
             useEffect(() => {
                 const timer = setInterval(() => setTimeLeft(calculateTimeLeft()), 1000);
                 return () => clearInterval(timer);
             }, []);
 
-            if (isHero) {
-                return (
-                    <div className="relative w-full overflow-hidden rounded-[32px] p-8 mb-10 group bg-black/40 border border-white/10">
-                        <div className={`absolute inset-0 bg-gradient-to-br ${event.color} opacity-20 group-hover:opacity-30 transition-opacity duration-1000`}></div>
-                        <div className="relative z-10 flex flex-col items-center text-center">
-                           <div className="mb-4 p-4 bg-white/10 rounded-full backdrop-blur-md shadow-lg border border-white/20 animate-bounce-slow text-white">
-                                <Icon name={event.iconStr} size={32} />
-                           </div>
-                           <h3 className="text-white/60 text-sm font-bold uppercase tracking-widest mb-2">Sự kiện sắp tới</h3>
-                           <h2 className="text-3xl md:text-5xl font-bold text-white mb-2">{event.name}</h2>
-                           <p className="text-white/70 mb-8">{event.desc}</p>
-                           <div className="grid grid-cols-4 gap-4 w-full max-w-2xl">
-                              {['Ngày', 'Giờ', 'Phút', 'Giây'].map((label, idx) => (
-                                  <div key={label} className="bg-black/30 rounded-2xl p-3 border border-white/10">
-                                      <div className="text-2xl md:text-4xl font-mono font-bold text-white">{[timeLeft.days, timeLeft.hours, timeLeft.minutes, timeLeft.seconds][idx]}</div>
-                                      <div className="text-[10px] uppercase text-white/40">{label}</div>
-                                  </div>
-                              ))}
-                           </div>
+            return (
+                <div className="glass-panel rounded-3xl p-5 flex flex-col relative overflow-hidden group hover:border-white/20 transition-all duration-300 h-full">
+                    {/* Background Glow */}
+                    <div className={`absolute -right-10 -top-10 w-32 h-32 bg-gradient-to-br ${event.color} opacity-10 blur-3xl group-hover:opacity-20 transition-opacity`}></div>
+                    
+                    <div className="flex items-start justify-between mb-6 relative z-10">
+                        <div className={`p-3 rounded-2xl bg-gradient-to-br ${event.color} text-white shadow-lg`}>
+                            <Icon name={event.iconStr} size={24} />
+                        </div>
+                        <div className="text-right">
+                            <p className="text-xs text-white/40 font-bold uppercase tracking-wider mb-1">Đếm ngược</p>
+                            <div className="flex items-baseline gap-1 justify-end">
+                                <span className="text-3xl font-bold text-white font-[JetBrains Mono] tracking-tighter">{timeLeft.days}</span>
+                                <span className="text-xs text-white/50 font-medium">ngày</span>
+                            </div>
                         </div>
                     </div>
-                );
-            }
-            
-            return (
-                <GlassCard className="p-5 flex items-center justify-between hover:bg-white/10 transition-colors cursor-default group w-full mb-4"> 
-                   <div className="flex items-center gap-5">
-                      <div className={`p-4 rounded-2xl bg-gradient-to-br ${event.color} text-white shadow-lg transform group-hover:scale-110 transition-transform duration-300 shrink-0`}>
-                        <Icon name={event.iconStr} />
-                      </div>
-                      <div className="overflow-hidden">
-                         <h4 className="font-bold text-lg text-white group-hover:text-blue-200 transition-colors truncate">{event.name}</h4>
-                         <p className="text-sm text-white/40 flex items-center gap-2"><Icon name="clock" size={12} /> {new Date(event.date).toLocaleDateString('vi-VN')}</p>
-                      </div>
-                   </div>
-                   <div className="text-right min-w-[70px] shrink-0">
-                      <span className="block text-3xl font-bold text-white tracking-tight">{timeLeft.days}</span>
-                      <span className="text-[10px] text-white/40 uppercase font-bold tracking-wider">Ngày nữa</span>
-                   </div>
-                </GlassCard>
+
+                    <div className="mt-auto relative z-10">
+                        <h3 className="text-xl font-bold text-white mb-1 truncate">{event.name}</h3>
+                        <div className="flex items-center justify-between border-t border-white/5 pt-3 mt-3">
+                            <div className="flex items-center gap-2 text-xs text-white/50">
+                                <Icon name="calendar" size={12} />
+                                <span>{new Date(event.date).toLocaleDateString('vi-VN')}</span>
+                            </div>
+                            <div className="text-xs text-white/30 font-mono">
+                                {String(timeLeft.hours).padStart(2,'0')}:{String(timeLeft.minutes).padStart(2,'0')}:{String(timeLeft.seconds).padStart(2,'0')}
+                            </div>
+                        </div>
+                    </div>
+                </div>
             );
         };
 
-        const InstaPost = ({ avatar, username, location, image, caption, likes, time, onLike, isLiked }) => (
-            <GlassCard className="mb-8 w-full max-w-md mx-auto !rounded-[24px] border-white/5 bg-[#121212]/80">
-                <div className="flex items-center justify-between p-4 border-b border-white/5">
-                    <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-yellow-400 via-red-500 to-purple-500 p-[2px]">
-                            <img src={avatar} className="w-full h-full rounded-full border-2 border-[#121212] object-cover" />
-                        </div>
-                        <div className="leading-tight">
-                            <div className="text-sm font-bold text-white flex items-center gap-1">{username} <Icon name="check-circle-2" size={12} className="text-blue-500 fill-blue-500/20" /></div>
-                            {location && <div className="text-xs text-white/50">{location}</div>}
-                        </div>
-                    </div>
-                    <Icon name="more-horizontal" className="text-white/60" />
-                </div>
-                <div className="relative aspect-[4/5] w-full bg-gray-900 overflow-hidden cursor-pointer" onDoubleClick={onLike}>
-                   <img src={image} className="w-full h-full object-cover" />
-                   {/* Heart Animation Overlay */}
-                   <div className={`absolute inset-0 flex items-center justify-center pointer-events-none transition-all duration-300 transform ${isLiked ? 'opacity-0 scale-110' : 'opacity-0 scale-90'}`}>
-                        <Icon name="heart" size={100} className="text-white fill-white drop-shadow-2xl" />
-                   </div>
-                </div>
-                <div className="p-4">
-                    <div className="flex justify-between items-center mb-4">
-                        <div className="flex gap-5">
-                            <button onClick={onLike} className="transition-transform active:scale-75 hover:opacity-80">
-                                {/* LOGIC ICON TIM ĐƯỢC FIX TẠI ĐÂY */}
-                                <Icon 
-                                    name="heart" 
-                                    size={28} 
-                                    className={isLiked ? "text-red-500 fill-red-500" : "text-white"} 
-                                />
-                            </button>
-                            <Icon name="message-circle" size={28} className="text-white hover:opacity-70 cursor-pointer" />
-                            <Icon name="send" size={28} className="text-white hover:opacity-70 cursor-pointer" />
-                        </div>
-                        <Icon name="bookmark" size={28} className="text-white hover:opacity-70 cursor-pointer" />
-                    </div>
-                    <div className="text-sm font-bold text-white mb-2">{formatNumber(isLiked ? likes + 1 : likes)} lượt thích</div>
-                    <div className="text-sm text-white mb-2 leading-relaxed"><span className="font-bold mr-2">{username}</span><span className="text-white/90 whitespace-pre-line" dangerouslySetInnerHTML={{ __html: caption }}></span></div>
-                    <div className="text-white/30 text-[10px] uppercase tracking-wide font-medium">{time}</div>
-                </div>
-            </GlassCard>
-        );
-
+        // --- APP LOGIC ---
         const App = () => {
-            const [isInitialLoading, setIsInitialLoading] = useState(true);
-            const [isLoggedIn, setIsLoggedIn] = useState(false);
-            const [currentPage, setCurrentPage] = useState('dashboard');
-            const [notification, setNotification] = useState(null);
-            const [data, setData] = useState({ verificationLink: '', type: 'waiting', updatedAt: new Date().toISOString() });
+            // State
+            const [view, setView] = useState('login'); // 'login' | 'app'
+            const [activeTab, setActiveTab] = useState('dashboard');
+            const [toast, setToast] = useState(null);
+            
+            // Auth State
             const [username, setUsername] = useState('');
             const [password, setPassword] = useState('');
-            const [isLoginLoading, setIsLoginLoading] = useState(false);
+            const [isAuthenticating, setIsAuthenticating] = useState(false);
+
+            // Data State
+            const [data, setData] = useState({ verificationLink: '', type: 'waiting', updatedAt: new Date().toISOString() });
             const [dbInstance, setDbInstance] = useState(null);
 
-            const DEMO_USER = 'admin';
-            const DEMO_PASS = '2025';
-            
-            const AVATAR_URL = "https://i.ibb.co/jv5WGkV4/image.jpg";
-            const [posts, setPosts] = useState([
-                { 
-                    id: 1, 
-                    avatar: AVATAR_URL, 
-                    username: "fanboi.n1ngn1ng", 
-                    location: "Dreaming of You 🌌", 
-                    image: "https://sf-static.upanhlaylink.com/img/image_202511270abd1195d504e1eebb79b533f6682b91.jpg",
-
-                    caption: "Người ta nói uống rượu mới say, còn tôi chỉ cần nhìn vào ánh mắt ấy là đủ lạc lối cả một đời... 🥀🖤<br/><br/>#ningning #aespa #my_muse #si_tinh", 
-                    likes: 360291, 
-                    time: "2 GIỜ TRƯỚC", 
-                    isLiked: true 
-                },
-                { 
-                    id: 2, 
-                    avatar: AVATAR_URL, 
-                    username: "fanboi.n1ngn1ng", 
-                    location: "In My Heart ❤️‍🔥", 
-                    image: "https://upload.wikimedia.org/wikipedia/commons/thumb/0/02/2023_MMA_aespa_Ningning_1.jpg/409px-2023_MMA_aespa_Ningning_1.jpg", 
-                    caption: "Thành phố này rộng lớn đến thế, nhưng tìm một người để nắm tay đi hết đoạn đường sao khó quá... 🌧️<br/><br/>Chỉ còn lại mình ta với đêm thâu nhớ về em.", 
-                    likes: 150432, 
-                    time: "1 NGÀY TRƯỚC", 
-                    isLiked: false 
-                },
-                { 
-                    id: 3, 
-                    avatar: AVATAR_URL, 
-                    username: "fanboi.n1ngn1ng", 
-                    location: "Seoul, Korea", 
-                    image: "https://upload.wikimedia.org/wikipedia/commons/thumb/5/52/Aespa_Ningning_2024_MMA.jpg/435px-Aespa_Ningning_2024_MMA.jpg", 
-                    caption: "Nếu nỗi nhớ là những hạt mưa, anh đã làm ướt cả bầu trời của em rồi đấy.<br/><br/>Nhớ Ning thật nhiều... ✨🌙 #love #missingyou #ningning", 
-                    likes: 289201, 
-                    time: "2 NGÀY TRƯỚC", 
-                    isLiked: true 
-                }
-            ]);
-
-            const UPCOMING_EVENTS = [
-                { id: 1, name: "Giáng Sinh 2025", date: "2025-12-25T00:00:00", iconStr: "gift", color: "from-green-600 to-red-600", desc: "Jingle bells..." },
-                { id: 2, name: "Tết Dương Lịch 2026", date: "2026-01-01T00:00:00", iconStr: "party-popper", color: "from-blue-600 to-purple-600", desc: "Chào đón năm mới" },
-                { id: 3, name: "Tết Nguyên Đán 2026", date: "2026-02-17T00:00:00", iconStr: "moon", color: "from-red-600 to-yellow-500", desc: "Tết cổ truyền" },
-                { id: 4, name: "Valentine 2026", date: "2026-02-14T00:00:00", iconStr: "heart", color: "from-pink-500 to-rose-500", desc: "Lễ tình nhân" },
+            // --- DATA ---
+            const EVENTS_LIST = [
+                { id: 1, name: "Giáng Sinh 2025", date: "2025-12-25T00:00:00", iconStr: "gift", color: "from-green-500 to-emerald-700" },
+                { id: 2, name: "Tết Dương Lịch", date: "2026-01-01T00:00:00", iconStr: "party-popper", color: "from-blue-500 to-indigo-700" },
+                { id: 3, name: "Tết Nguyên Đán", date: "2026-02-17T00:00:00", iconStr: "moon", color: "from-red-500 to-orange-600" },
+                { id: 4, name: "Valentine 2026", date: "2026-02-14T00:00:00", iconStr: "heart", color: "from-pink-500 to-rose-600" },
+                { id: 5, name: "Quốc Tế Phụ Nữ", date: "2026-03-08T00:00:00", iconStr: "flower", color: "from-purple-500 to-fuchsia-600" },
+                { id: 6, name: "Giỗ Tổ Hùng Vương", date: "2026-04-25T00:00:00", iconStr: "crown", color: "from-yellow-500 to-amber-600" },
             ];
 
+            const BLOG_POSTS = [
+                { id: 1, u: "fanboi.n1ngn1ng", t: "2 giờ trước", i: "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f4/Aespa%27s_Ningning_4.jpg/600px-Aespa%27s_Ningning_4.jpg", c: "Người ta nói uống rượu mới say, còn tôi chỉ cần nhìn vào ánh mắt ấy là đủ lạc lối cả một đời... 🥀🖤", l: 360291 },
+                { id: 2, u: "fanboi.n1ngn1ng", t: "1 ngày trước", i: "https://upload.wikimedia.org/wikipedia/commons/thumb/0/02/2023_MMA_aespa_Ningning_1.jpg/409px-2023_MMA_aespa_Ningning_1.jpg", c: "Thành phố này rộng lớn đến thế, nhưng tìm một người để nắm tay đi hết đoạn đường sao khó quá... 🌧️", l: 150432 },
+                { id: 3, u: "fanboi.n1ngn1ng", t: "2 ngày trước", i: "https://upload.wikimedia.org/wikipedia/commons/thumb/5/52/Aespa_Ningning_2024_MMA.jpg/435px-Aespa_Ningning_2024_MMA.jpg", c: "Nếu nỗi nhớ là những hạt mưa, anh đã làm ướt cả bầu trời của em rồi đấy. ✨🌙", l: 289201 }
+            ];
+
+            // --- INIT ---
             useEffect(() => {
-                setTimeout(() => setIsInitialLoading(false), 2000);
-                
                 const firebaseConfig = {
                     // ⚠️⚠️⚠️ DÁN LINK FIREBASE CỦA BẠN VÀO DƯỚI ĐÂY ⚠️⚠️⚠️
                     databaseURL: "https://YOUR_PROJECT_ID.firebasedatabase.app", 
                 };
-
                 try {
                     if (firebaseConfig.databaseURL && !firebaseConfig.databaseURL.includes("YOUR_PROJECT")) {
                         const app = initializeApp(firebaseConfig);
                         const database = getDatabase(app);
                         setDbInstance(database);
                     }
-                } catch (e) { console.error("Firebase init failed", e); }
+                } catch (e) { console.error("FB Error", e); }
             }, []);
 
-            // FIREBASE SYNC
             useEffect(() => {
-                if (dbInstance && isLoggedIn) {
+                if (dbInstance && view === 'app') {
                     const dataRef = ref(dbInstance, 'netflix_data');
                     const unsubscribe = onValue(dataRef, (snapshot) => {
                         if (snapshot.exists()) {
                             const val = snapshot.val();
-                            setData({
+                            const newData = {
                                 verificationLink: val.verificationLink || '',
                                 type: val.type || 'waiting',
                                 updatedAt: val.updatedAt || new Date().toISOString()
-                            });
+                            };
+                            setData(newData);
+                            // Check new link notify
+                            const diff = (new Date() - new Date(newData.updatedAt)) / 1000 / 60;
+                            if(newData.type === 'link_ready' && diff < EXPIRATION_MINUTES) {
+                                showNotification('success', '🔔 Có liên kết xác minh mới!');
+                            }
                         }
                     });
                     return () => unsubscribe();
                 }
-            }, [dbInstance, isLoggedIn]);
+            }, [dbInstance, view]);
 
-            const showToast = (msg, type = 'success') => {
-                setNotification({ msg, type });
-                setTimeout(() => setNotification(null), 3000);
+            // --- ACTIONS ---
+            const showNotification = (type, msg) => {
+                setToast({ type, msg });
+                setTimeout(() => setToast(null), 3000);
             };
 
             const handleLogin = (e) => {
                 e.preventDefault();
-                setIsLoginLoading(true);
+                setIsAuthenticating(true);
                 setTimeout(() => {
                     if (username === DEMO_USER && password === DEMO_PASS) {
-                        setIsLoggedIn(true);
-                        showToast('Đăng nhập thành công');
+                        setView('app');
+                        showNotification('success', 'Đăng nhập thành công');
                     } else {
-                        showToast('Sai mật khẩu! (admin/2025)', 'error');
+                        showNotification('error', 'Sai mật khẩu! (admin/2025)');
                     }
-                    setIsLoginLoading(false);
-                }, 1500);
+                    setIsAuthenticating(false);
+                }, 1000);
             };
 
-            const handleCopy = (text) => {
+            const handleCopy = () => {
                 const el = document.createElement('textarea');
-                el.value = text;
+                el.value = data.verificationLink;
                 document.body.appendChild(el);
                 el.select();
                 document.execCommand('copy');
                 document.body.removeChild(el);
-                showToast('Đã sao chép liên kết!');
+                showNotification('success', 'Đã sao chép liên kết!');
             };
 
-            const handleLike = (id) => setPosts(posts.map(p => p.id === id ? { ...p, isLiked: !p.isLiked } : p));
+            // --- LOGIC RENDER HELPERS ---
+            const isLinkExpired = (() => {
+                try {
+                    const diff = new Date() - new Date(data.updatedAt);
+                    return (diff / 1000 / 60) >= EXPIRATION_MINUTES;
+                } catch { return true; }
+            })();
+            
+            const isLinkReady = data.type === 'link_ready' && !isLinkExpired;
 
-            // RENDER LOGIC
-            if (isInitialLoading) {
-                return (
-                    <div className="min-h-screen bg-black flex flex-col items-center justify-center relative overflow-hidden">
-                        <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20"></div>
-                        <div className="animate-pulse"><NetflixIOSIcon className="w-24 h-24 !rounded-[22%]" /></div>
-                        <p className="text-white/30 text-xs mt-8 uppercase tracking-widest animate-bounce">Loading...</p>
-                    </div>
-                );
-            }
+            const formatTime = (str) => {
+                try {
+                    const d = new Date(str);
+                    if(isNaN(d.getTime())) return "Vừa xong";
+                    return `${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')} - ${d.getDate()}/${d.getMonth()+1}`;
+                } catch { return "Vừa xong"; }
+            };
 
-            if (!isLoggedIn) {
-                return (
-                    <div className="min-h-screen flex items-center justify-center p-6 relative z-10">
-                        <div className="fixed inset-0 z-0 pointer-events-none"><div className="absolute top-[-20%] right-[-10%] w-[60vw] h-[60vw] rounded-full bg-purple-900/20 blur-[120px]"></div><div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20"></div></div>
-                        {notification && <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 animate-fade-in"><div className={`backdrop-blur-xl border border-white/20 px-6 py-3 rounded-full flex items-center gap-3 shadow-2xl ${notification.type==='error'?'bg-red-900/50 text-red-400':'bg-white/10 text-green-400'}`}><Icon name={notification.type==='error'?'alert-circle':'check-circle-2'} /><span className="text-sm font-medium text-white">{notification.msg}</span></div></div>}
-                        
-                        <div className="glass-card p-8 md:p-12 w-full max-w-md relative z-10 animate-fade-in">
-                            <div className="text-center mb-10">
-                                <div className="flex justify-center mb-6"><NetflixIOSIcon /></div>
-                                <h1 className="text-2xl font-bold mb-2">Access Hub</h1>
-                                <p className="text-white/40 text-sm">Hệ thống quản lý xác minh</p>
-                            </div>
-                            <form onSubmit={handleLogin} className="space-y-4">
-                                <input type="text" placeholder="Tên đăng nhập" value={username} onChange={(e) => setUsername(e.target.value)} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-red-500/50 transition-all" />
-                                <input type="password" placeholder="Mật khẩu" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-red-500/50 transition-all" />
-                                <button type="submit" disabled={isLoginLoading} className="w-full bg-white text-black font-bold py-3 rounded-xl mt-4 hover:bg-gray-200 transition-all flex justify-center gap-2 items-center active:scale-95">
-                                    {isLoginLoading ? <Icon name="loader-2" className="animate-spin" /> : "Đăng nhập"}
-                                </button>
-                            </form>
-                            <div className="mt-6 text-center text-xs text-white/20">Demo: admin / 2025</div>
-                        </div>
-                    </div>
-                );
-            }
-
-            const isExpired = checkIsExpired(data.updatedAt);
-            const isLinkReady = data.type === 'link_ready' && !isExpired;
-
+            // === MAIN RENDER ===
             return (
-                <div className="min-h-screen p-4 md:p-8 relative z-10">
-                    <div className="fixed inset-0 z-0 pointer-events-none"><div className="absolute top-[-20%] right-[-10%] w-[60vw] h-[60vw] rounded-full bg-purple-900/20 blur-[120px]"></div><div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20"></div></div>
-                    {notification && <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 animate-fade-in"><div className="bg-white/10 backdrop-blur-xl border border-white/20 px-6 py-3 rounded-full flex items-center gap-3 shadow-2xl text-green-400"><Icon name="check-circle-2" /><span className="text-sm font-medium text-white">{notification.msg}</span></div></div>}
+                <div className="min-h-screen relative overflow-hidden">
+                    {/* BACKGROUND (Fixed) */}
+                    <div className="fixed inset-0 z-0 pointer-events-none">
+                        <div className="absolute top-[-20%] right-[-10%] w-[60vw] h-[60vw] rounded-full bg-purple-900/20 blur-[120px] animate-pulse-slow"></div>
+                        <div className="absolute bottom-[-10%] left-[-10%] w-[50vw] h-[50vw] rounded-full bg-red-900/10 blur-[120px] animate-pulse-slow"></div>
+                        <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20"></div>
+                    </div>
 
-                    <div className="max-w-7xl mx-auto relative z-10">
-                        <header className="flex justify-between items-center mb-8 px-2">
-                            <div className="flex items-center gap-3"><NetflixIOSIcon /><h1 className="text-xl font-bold tracking-tight hidden md:block">Access Hub</h1></div>
-                            <div className="flex gap-2">
-                                <button onClick={() => setCurrentPage('dashboard')} className={`text-sm px-4 py-2 rounded-full border border-white/5 flex items-center gap-2 transition-colors ${currentPage === 'dashboard' ? 'bg-white/10 text-white' : 'bg-white/5 hover:bg-white/10 text-white/60'}`}><Icon name="terminal" size={14} /> <span className="hidden md:inline">Dashboard</span></button>
-                                <button onClick={() => setCurrentPage('events')} className={`text-sm px-4 py-2 rounded-full border border-white/5 flex items-center gap-2 transition-colors ${currentPage === 'events' ? 'bg-white/10 text-white' : 'bg-white/5 hover:bg-white/10 text-white/60'}`}><Icon name="calendar" size={14} /> <span className="hidden md:inline">Sự kiện</span></button>
-                                <button onClick={() => setCurrentPage('blog')} className={`text-sm px-4 py-2 rounded-full border border-white/5 flex items-center gap-2 transition-colors ${currentPage === 'blog' ? 'bg-white/10 text-white' : 'bg-white/5 hover:bg-white/10 text-white/60'}`}><Icon name="book-open" size={14} /> <span className="hidden md:inline">Blog</span></button>
-                                <button onClick={() => setIsLoggedIn(false)} className="text-sm text-white/40 hover:text-white px-2 ml-2">Thoát</button>
+                    {/* TOAST */}
+                    {toast && (
+                        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 animate-enter">
+                            <div className={`glass-panel px-6 py-3 rounded-full flex items-center gap-3 shadow-2xl border ${toast.type === 'error' ? 'border-red-500/30 text-red-400' : 'border-green-500/30 text-green-400'}`}>
+                                <Icon name={toast.type === 'error' ? 'alert-circle' : 'check-circle-2'} size={18} />
+                                <span className="text-sm font-medium text-white">{toast.msg}</span>
                             </div>
-                        </header>
+                        </div>
+                    )}
 
-                        {currentPage === 'blog' && (
-                            <div className="max-w-md mx-auto pt-4 animate-fade-in">
-                                <h2 className="text-2xl font-bold text-center mb-6">Bảng Tin</h2>
-                                {posts.map(post => <InstaPost key={post.id} {...post} onLike={() => handleLike(post.id)} />)}
-                            </div>
-                        )}
-
-                        {currentPage === 'events' && (
-                            <div className="max-w-2xl mx-auto pt-4 animate-fade-in pb-12">
-                                <div className="flex items-center justify-center gap-3 mb-8"><Icon name="calendar" className="text-blue-400" /><h2 className="text-2xl font-bold">Sự kiện sắp tới</h2></div>
-                                {/* HERO EVENT */}
-                                {UPCOMING_EVENTS.filter(e => new Date(e.date) > new Date()).sort((a,b) => new Date(a.date)-new Date(b.date)).slice(0,1).map((event, idx) => <EventCard key={event.id} event={event} isHero={true} />)}
-                                {/* LIST EVENTS (KHÔNG LẶP) */}
-                                <div className="flex flex-col gap-6 mt-6">
-                                    {UPCOMING_EVENTS.filter(e => new Date(e.date) > new Date()).sort((a,b) => new Date(a.date)-new Date(b.date)).slice(1).map((event) => <EventCard key={event.id} event={event} />)}
+                    {/* === LOGIN VIEW === */}
+                    {view === 'login' && (
+                        <div className="min-h-screen flex items-center justify-center p-6 relative z-10 animate-enter">
+                            <div className="glass-panel p-10 w-full max-w-md rounded-[32px]">
+                                <div className="flex flex-col items-center mb-10">
+                                    <NetflixLogo />
+                                    <h1 className="text-2xl font-bold mt-6 text-white">Chào mừng trở lại</h1>
+                                    <p className="text-white/40 text-sm mt-1">Đăng nhập để quản lý hệ thống</p>
                                 </div>
+                                <form onSubmit={handleLogin} className="space-y-4">
+                                    <div className="relative group">
+                                        <div className="absolute left-4 top-3.5 text-white/30"><Icon name="user" size={18} /></div>
+                                        <input type="text" placeholder="Tên đăng nhập" value={username} onChange={e => setUsername(e.target.value)} 
+                                            className="w-full bg-black/40 border border-white/10 rounded-2xl py-3.5 pl-11 pr-4 text-white placeholder-white/20 focus:outline-none focus:border-white/30 transition-colors" />
+                                    </div>
+                                    <div className="relative group">
+                                        <div className="absolute left-4 top-3.5 text-white/30"><Icon name="lock" size={18} /></div>
+                                        <input type="password" placeholder="Mật khẩu" value={password} onChange={e => setPassword(e.target.value)}
+                                            className="w-full bg-black/40 border border-white/10 rounded-2xl py-3.5 pl-11 pr-4 text-white placeholder-white/20 focus:outline-none focus:border-white/30 transition-colors" />
+                                    </div>
+                                    <button type="submit" disabled={isAuthenticating} 
+                                        className="w-full bg-white text-black font-bold py-4 rounded-2xl mt-4 hover:bg-gray-200 transition-all flex justify-center items-center gap-2 active:scale-[0.98]">
+                                        {isAuthenticating ? <Icon name="loader-2" className="animate-spin" /> : "Đăng nhập"}
+                                    </button>
+                                </form>
                             </div>
-                        )}
+                        </div>
+                    )}
 
-                        {currentPage === 'dashboard' && (
-                            <div className="grid grid-cols-1 md:grid-cols-12 gap-6 animate-fade-in">
-                                <div className="md:col-span-4 flex flex-col gap-6">
-                                    <GlassCard className="p-6">
-                                        <div className="flex items-center gap-2 mb-4 text-purple-400"><Icon name="terminal" size={20} /> <h2 className="font-bold text-lg text-white">Thông tin</h2></div>
-                                        <div className="space-y-3 text-sm opacity-80">
-                                            <div className="flex justify-between border-b border-white/5 pb-2"><span>Ra mắt</span><span>25/11/2025</span></div>
-                                            <div className="flex justify-between border-b border-white/5 pb-2"><span>Dev</span><span>Admin Team</span></div>
-                                            <div class="text-xs mt-2 text-white/50">Hệ thống tự động quét mail Netflix và trả về link xác minh.</div>
+                    {/* === APP VIEW (DASHBOARD) === */}
+                    {view === 'app' && (
+                        <div className="min-h-screen relative z-10 p-4 md:p-8 animate-enter">
+                            <div className="max-w-7xl mx-auto">
+                                {/* HEADER */}
+                                <div className="flex justify-between items-center mb-10 px-2">
+                                    <div className="flex items-center gap-4">
+                                        <NetflixLogo />
+                                        <div>
+                                            <h1 className="text-lg font-bold tracking-tight text-white">Access Hub</h1>
+                                            <div className="flex items-center gap-2 text-xs text-white/40">
+                                                <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span> Online
+                                            </div>
                                         </div>
-                                    </GlassCard>
-                                    <GlassCard className="p-6 flex-1">
-                                        <div className="flex items-center gap-2 mb-6 text-blue-400"><Icon name="book-open" size={20} /><h2 className="font-bold text-lg text-white">Hướng dẫn lấy mã</h2></div>
-                                        <div className="space-y-6 relative">
-                                            <div className="absolute left-[15px] top-2 bottom-2 w-[2px] bg-white/5"></div>
-                                            <div className="relative pl-10"><div className="absolute left-0 top-0 w-8 h-8 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-blue-400"><Icon name="tv" size={14} /></div><h3 className="font-semibold text-white mb-1">B1: Thao tác Tivi</h3><p className="text-sm text-white/40">Chọn "Cập nhật hộ gia đình" -> Nhấn <strong>"Gửi Email"</strong>.</p></div>
-                                            <div className="relative pl-10"><div className="absolute left-0 top-0 w-8 h-8 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-yellow-400"><Icon name="loader-2" size={14} className="animate-spin" /></div><h3 className="font-semibold text-white mb-1">B2: Chờ tại đây</h3><p className="text-sm text-white/40">Link xác minh sẽ tự động hiện ra bên phải (khoảng 1 phút).</p></div>
-                                            <div className="relative pl-10"><div className="absolute left-0 top-0 w-8 h-8 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-green-400"><Icon name="external-link" size={14} /></div><h3 className="font-semibold text-white mb-1">B3: Mở Link</h3><p className="text-sm text-white/40">Bấm nút "Mở Link" để hoàn tất xác minh.</p></div>
-                                        </div>
-                                    </GlassCard>
+                                    </div>
+                                    <button onClick={() => setView('login')} className="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors">
+                                        <Icon name="log-out" size={18} className="text-white/60" />
+                                    </button>
                                 </div>
 
-                                <div className="md:col-span-8">
-                                    <GlassCard className="h-full p-8 md:p-12 flex flex-col justify-center min-h-[400px] relative overflow-hidden text-center">
-                                        <div className={`absolute inset-0 opacity-20 transition-all duration-1000 bg-gradient-to-br ${isLinkReady ? 'from-blue-600 to-purple-900' : 'from-red-600 to-black'}`}></div>
-                                        <div className="relative z-10 w-full max-w-lg mx-auto">
-                                            <div className="flex justify-center mb-10">
-                                                <div className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full border text-xs font-bold uppercase tracking-wider shadow-lg backdrop-blur-md ${isLinkReady ? 'bg-blue-500/20 border-blue-500/30 text-blue-300' : 'bg-green-500/10 border-green-500/20 text-green-400'}`}>
-                                                    {isLinkReady ? <><Icon name="zap" size={14} className="animate-pulse" /> Link Ready</> : <><Icon name="shield-check" size={14} /> System Active</>}
+                                {/* NAVIGATION */}
+                                <div className="flex justify-center mb-8">
+                                    <div className="bg-white/5 p-1 rounded-full flex gap-1 border border-white/10">
+                                        {['dashboard', 'events', 'blog'].map(tab => (
+                                            <button key={tab} onClick={() => setActiveTab(tab)}
+                                                className={`px-6 py-2.5 rounded-full text-sm font-medium transition-all flex items-center gap-2 ${activeTab === tab ? 'bg-white text-black shadow-lg' : 'text-white/60 hover:text-white hover:bg-white/5'}`}>
+                                                <Icon name={tab === 'dashboard' ? 'terminal' : tab === 'events' ? 'calendar' : 'book-open'} size={16} />
+                                                <span className="capitalize">{tab === 'dashboard' ? 'Trang chủ' : tab === 'events' ? 'Sự kiện' : 'Blog'}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* --- TAB CONTENT --- */}
+                                
+                                {/* 1. DASHBOARD */}
+                                {activeTab === 'dashboard' && (
+                                    <div className="grid grid-cols-1 md:grid-cols-12 gap-6 animate-enter">
+                                        {/* Left Panel */}
+                                        <div className="md:col-span-4 flex flex-col gap-6">
+                                            <div className="glass-panel p-6 rounded-[32px] h-full flex flex-col">
+                                                <div className="flex items-center gap-3 mb-6 text-blue-400">
+                                                    <div className="p-2 bg-blue-500/10 rounded-lg"><Icon name="book-open" size={20} /></div>
+                                                    <h2 className="font-bold text-lg text-white">Hướng dẫn</h2>
+                                                </div>
+                                                <div className="space-y-8 relative pl-2 flex-1">
+                                                    <div className="absolute left-[15px] top-2 bottom-2 w-[2px] bg-white/5"></div>
+                                                    {[
+                                                        { icon: 'tv', color: 'text-blue-400', title: 'Thao tác Tivi', desc: 'Chọn "Cập nhật hộ gia đình" -> Nhấn "Gửi Email".' },
+                                                        { icon: 'loader-2', color: 'text-yellow-400', title: 'Chờ tại đây', desc: 'Link xác minh sẽ tự động hiện ra bên phải (khoảng 1 phút).' },
+                                                        { icon: 'external-link', color: 'text-green-400', title: 'Mở Link', desc: 'Bấm nút "Mở Link" để hoàn tất xác minh.' }
+                                                    ].map((step, i) => (
+                                                        <div key={i} className="relative pl-12">
+                                                            <div className={`absolute left-0 top-0 w-8 h-8 rounded-full bg-white/5 border border-white/10 flex items-center justify-center ${step.color}`}>
+                                                                <Icon name={step.icon} size={14} className={step.icon === 'loader-2' ? 'animate-spin' : ''} />
+                                                            </div>
+                                                            <h3 className="font-semibold text-white text-sm mb-1">{step.title}</h3>
+                                                            <p className="text-xs text-white/40 leading-relaxed">{step.desc}</p>
+                                                        </div>
+                                                    ))}
                                                 </div>
                                             </div>
-
-                                            {isLinkReady ? (
-                                                <div className="animate-fade-in">
-                                                    <div className="mb-6 relative group text-left"><label className="text-[10px] text-blue-300 uppercase font-bold tracking-widest mb-2 block ml-1 opacity-70">Secure Link</label><div className="relative overflow-hidden rounded-2xl bg-[#0a0a0a] border border-blue-500/30 flex items-center p-4"><div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div><Icon name="key" className="text-blue-400 mr-4" /><input type="text" readOnly value={data.verificationLink} className="w-full bg-transparent text-blue-100 font-mono text-sm focus:outline-none truncate opacity-80" /><Icon name="globe" className="text-blue-500/50 animate-pulse ml-2" /></div></div>
-                                                    <div className="flex flex-col sm:flex-row gap-4 mt-8"><button onClick={() => handleCopy(data.verificationLink)} className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-bold py-4 rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-transform"><Icon name="copy" size={18} /> Sao chép</button><a href={data.verificationLink} target="_blank" className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-blue-900/50 active:scale-95 transition-transform"><Icon name="external-link" size={18} /> Mở Link Ngay</a></div>
-                                                </div>
-                                            ) : (
-                                                <div className={`py-12 border-2 border-dashed rounded-3xl ${isExpired && data.type === 'link_ready' ? 'border-yellow-500/30 bg-yellow-500/5' : 'border-white/10 bg-white/5'}`}>
-                                                    <div className="mb-4 flex justify-center"><Icon name={isExpired ? "alert-triangle" : "lock"} size={48} className={isExpired ? "text-yellow-500/50 mx-auto" : "text-white/20 mx-auto"} /></div>
-                                                    <h3 className={`font-bold text-lg ${isExpired ? "text-yellow-500/80" : "text-white/50"}`}>{isExpired ? "Link đã hết hạn" : "Đang chờ liên kết..."}</h3>
-                                                    <p className="text-white/30 text-sm mt-2">{isExpired ? "Quá 16 phút. Vui lòng gửi lại mail mới." : "Hệ thống đang quét mail. Vui lòng gửi mail từ Tivi."}</p>
-                                                </div>
-                                            )}
-                                            <p className="mt-12 text-white/30 text-xs flex items-center justify-center gap-2 font-mono"><Icon name="refresh-cw" size={12} className={!isLinkReady ? "animate-spin" : ""} /> Cập nhật: {formatFullDateTime(data.updatedAt)}</p>
                                         </div>
-                                    </GlassCard>
-                                </div>
 
-                                <div className="md:col-span-12">
-                                    <GlassCard className="p-6 flex flex-col md:flex-row items-center justify-between gap-6"><div className="flex items-center gap-4"><div className="w-12 h-12 bg-white/10 rounded-full flex items-center justify-center border border-white/10"><Icon name="heart" className="text-pink-500 fill-pink-500" /></div><div><h3 className="font-bold text-white">Ủng hộ tác giả</h3><p className="text-white/40 text-sm">Giúp duy trì server và cà phê.</p></div></div><div className="flex gap-3 w-full md:w-auto text-sm"><div className="bg-white/5 px-4 py-2 rounded-lg border border-white/10 flex items-center gap-2"><Icon name="smartphone" size={14} /> MOMO: 090xxxxxxx</div><div className="bg-white/5 px-4 py-2 rounded-lg border border-white/10 flex items-center gap-2"><Icon name="coffee" size={14} /> BANK: MB / 1234...</div></div></GlassCard>
-                                </div>
+                                        {/* Right Panel (Main Tool) */}
+                                        <div className="md:col-span-8">
+                                            <div className="glass-panel h-full p-8 md:p-16 rounded-[32px] flex flex-col justify-center items-center text-center relative overflow-hidden">
+                                                {/* Dynamic Background */}
+                                                <div className={`absolute inset-0 opacity-20 transition-all duration-1000 bg-gradient-to-br ${isLinkReady ? 'from-blue-600 to-purple-900' : 'from-red-600 to-black'}`}></div>
+                                                
+                                                <div className="relative z-10 w-full max-w-md">
+                                                    {/* Status Chip */}
+                                                    <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full border text-xs font-bold uppercase tracking-wider shadow-lg mb-8 ${isLinkReady ? 'bg-blue-500/20 border-blue-500/30 text-blue-300' : 'bg-white/5 border-white/10 text-white/50'}`}>
+                                                        <Icon name={isLinkReady ? 'zap' : 'shield-check'} size={14} className={isLinkReady ? 'fill-blue-300 animate-pulse' : ''} />
+                                                        {isLinkReady ? 'Link Ready' : 'System Active'}
+                                                    </div>
+
+                                                    {isLinkReady ? (
+                                                        <div className="animate-enter">
+                                                            <div className="bg-[#0a0a0a] border border-blue-500/30 rounded-2xl p-1 pl-4 flex items-center gap-4 mb-6 shadow-2xl shadow-blue-900/20">
+                                                                <Icon name="key" className="text-blue-400 shrink-0" />
+                                                                <div className="flex-1 truncate text-left">
+                                                                    <div className="text-[10px] text-blue-500/50 font-bold uppercase tracking-wider">Secure Link</div>
+                                                                    <div className="text-sm text-blue-100 font-mono truncate w-full">{data.verificationLink}</div>
+                                                                </div>
+                                                                <button onClick={handleCopy} className="p-3 bg-white/10 hover:bg-white/20 rounded-xl text-white transition-colors"><Icon name="copy" size={18} /></button>
+                                                            </div>
+                                                            <a href={data.verificationLink} target="_blank" className="block w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-2xl shadow-[0_0_40px_rgba(37,99,235,0.4)] hover:shadow-[0_0_60px_rgba(37,99,235,0.6)] transition-all active:scale-[0.98] flex items-center justify-center gap-2">
+                                                                <Icon name="external-link" size={20} /> Mở Link Xác Minh
+                                                            </a>
+                                                        </div>
+                                                    ) : (
+                                                        <div className={`py-16 border-2 border-dashed rounded-3xl flex flex-col items-center justify-center ${isExpired && data.type === 'link_ready' ? 'border-yellow-500/30 bg-yellow-500/5' : 'border-white/10 bg-white/5'}`}>
+                                                            <div className={`mb-4 p-4 rounded-full ${isExpired ? 'bg-yellow-500/10 text-yellow-500' : 'bg-white/5 text-white/20'}`}>
+                                                                <Icon name={isExpired ? "alert-triangle" : "lock"} size={32} />
+                                                            </div>
+                                                            <h3 className="text-white/50 font-bold text-lg">{isExpired ? "Link đã hết hạn" : "Đang chờ liên kết..."}</h3>
+                                                            <p className="text-white/30 text-sm mt-2 max-w-xs mx-auto">{isExpired ? "Vui lòng gửi lại mail mới." : "Hệ thống đang quét mail..."}</p>
+                                                        </div>
+                                                    )}
+                                                    
+                                                    <div className="mt-8 flex items-center justify-center gap-2 text-xs text-white/30 font-mono">
+                                                        <Icon name="refresh-cw" size={12} className={!isLinkReady ? "animate-spin" : ""} />
+                                                        Cập nhật: {formatTime(data.updatedAt)}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* 2. EVENTS (NEW GRID DESIGN) */}
+                                {activeTab === 'events' && (
+                                    <div className="animate-enter pb-12">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                                            {UPCOMING_EVENTS.sort((a,b) => new Date(a.date) - new Date(b.date)).map((event, index) => (
+                                                <EventCard key={event.id} event={event} />
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* 3. BLOG */}
+                                {activeTab === 'blog' && (
+                                    <div className="max-w-md mx-auto animate-enter pb-12">
+                                        {BLOG_POSTS.map(post => (
+                                            <div key={post.id} className="glass-panel mb-8 rounded-3xl overflow-hidden">
+                                                <div className="flex items-center justify-between p-4 border-b border-white/5">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="w-10 h-10 rounded-full p-[2px] bg-gradient-to-tr from-yellow-400 via-red-500 to-purple-500">
+                                                            <img src={post.i} className="w-full h-full rounded-full border-2 border-black object-cover" />
+                                                        </div>
+                                                        <div className="leading-tight">
+                                                            <div className="text-sm font-bold text-white flex items-center gap-1">{post.u} <Icon name="check-circle-2" size={12} className="text-blue-500 fill-blue-500/20" /></div>
+                                                            <div className="text-xs text-white/50">Seoul, Korea</div>
+                                                        </div>
+                                                    </div>
+                                                    <Icon name="more-horizontal" className="text-white/60" />
+                                                </div>
+                                                <div className="relative aspect-[4/5] w-full bg-gray-900">
+                                                    <img src={post.i} className="w-full h-full object-cover" />
+                                                </div>
+                                                <div className="p-4">
+                                                    <div className="flex justify-between mb-4">
+                                                        <div className="flex gap-4">
+                                                            <Icon name="heart" size={26} className="text-white hover:text-red-500 transition-colors cursor-pointer" />
+                                                            <Icon name="message-circle" size={26} className="text-white hover:opacity-70 cursor-pointer" />
+                                                            <Icon name="send" size={26} className="text-white hover:opacity-70 cursor-pointer" />
+                                                        </div>
+                                                        <Icon name="bookmark" size={26} className="text-white hover:opacity-70 cursor-pointer" />
+                                                    </div>
+                                                    <div className="text-sm font-bold text-white mb-2">{formatNumber(post.l)} lượt thích</div>
+                                                    <div className="text-sm text-white/90 leading-relaxed mb-2">
+                                                        <span className="font-bold mr-2 text-white">{post.u}</span>
+                                                        {post.c}
+                                                    </div>
+                                                    <div className="text-[10px] text-white/40 uppercase font-bold tracking-wide">{post.t}</div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
-                        )}
-                    </div>
+                        </div>
+                    )}
                 </div>
             );
         };
@@ -493,5 +494,4 @@
         root.render(<App />);
     </script>
 </body>
-
 </html>
