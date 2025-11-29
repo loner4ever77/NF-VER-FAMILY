@@ -205,38 +205,59 @@
             const [data, setData] = useState({ verificationLink: '', type: 'waiting', updatedAt: new Date().toISOString() });
             const [dbInstance, setDbInstance] = useState(null);
 
-            // --- ROUTING LOGIC (New Feature) ---
+            // --- ROUTING LOGIC (UPDATED) ---
             useEffect(() => {
                 const handleRouting = () => {
                     const isAuth = localStorage.getItem('netflix_auth_token') === 'true';
-                    const hash = window.location.hash;
+                    // Lấy hash và bỏ dấu # (ví dụ: #dashboard -> dashboard)
+                    // Nếu không có hash thì mặc định là empty
+                    let hash = window.location.hash.replace('#', '');
+                    
+                    // Xử lý alias người dùng yêu cầu: #event -> events
+                    if (hash === 'event') hash = 'events';
+
+                    const validTabs = ['dashboard', 'events', 'blog'];
 
                     if (isAuth) {
-                        // Nếu đã đăng nhập mà đang ở trang login hoặc ko có hash -> Chuyển sang dashboard
-                        if (hash === '#login' || !hash) {
+                        // Đã đăng nhập
+                        if (hash === 'login' || hash === '') {
+                            // Nếu vào login hoặc trang chủ trống -> đẩy về dashboard
                             window.location.hash = 'dashboard';
+                            return; 
+                        }
+
+                        // Nếu hash hợp lệ trong app
+                        if (validTabs.includes(hash)) {
                             setView('app');
-                        } else if (hash === '#dashboard') {
-                            setView('app');
+                            setActiveTab(hash);
+                        } else {
+                            // Hash rác -> về dashboard
+                            window.location.hash = 'dashboard';
                         }
                     } else {
-                        // Nếu chưa đăng nhập mà cố vào dashboard -> Đá về login
-                        if (hash === '#dashboard') {
+                        // Chưa đăng nhập
+                        if (validTabs.includes(hash)) {
+                            // Cố tình vào trang nội bộ -> Đá về login
                             window.location.hash = 'login';
-                            setView('login');
-                        } else {
-                            setView('login');
+                            return;
                         }
+                        // Ở lại login
+                        setView('login');
                     }
                 };
 
                 // Chạy check lần đầu
                 handleRouting();
 
-                // Lắng nghe sự kiện đổi URL
+                // Lắng nghe sự kiện đổi URL (Quan trọng: nút Back/Forward trình duyệt sẽ kích hoạt cái này)
                 window.addEventListener('hashchange', handleRouting);
                 return () => window.removeEventListener('hashchange', handleRouting);
             }, []);
+
+            // Hàm chuyển tab bằng cách đổi Hash (URL)
+            const navigateTo = (tabName) => {
+                window.location.hash = tabName;
+            };
 
             // BLOG DATA
             const AVATAR_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e6/240527_Aespa_Ningning.jpg/640px-240527_Aespa_Ningning.jpg";
@@ -312,9 +333,8 @@
                 setIsAuthenticating(true);
                 setTimeout(() => {
                     if (username === DEMO_USER && password === DEMO_PASS) {
-                        // Lưu trạng thái đăng nhập vào Local Storage
                         localStorage.setItem('netflix_auth_token', 'true');
-                        // Chuyển hướng URL (Mô phỏng load trang mới)
+                        // Đổi URL -> trigger hashchange -> cập nhật view
                         window.location.hash = 'dashboard';
                         showNotification('success', 'Đăng nhập thành công');
                     } else {
@@ -326,8 +346,7 @@
             
             const handleLogout = () => {
                 localStorage.removeItem('netflix_auth_token');
-                window.location.hash = 'login';
-                setView('login');
+                window.location.hash = 'login'; // Đẩy về URL login
                 showNotification('success', 'Đã đăng xuất');
             };
 
@@ -377,7 +396,7 @@
                         <div className="min-h-screen relative z-10 p-4 md:p-8 animate-enter">
                             <div className="max-w-7xl mx-auto">
                                 <div className="flex justify-between items-center mb-10 px-2"><div className="flex items-center gap-4"><NetflixLogo /><div><h1 className="text-lg font-bold tracking-tight text-white">Access Hub</h1><div className="flex items-center gap-2 text-xs text-white/40"><span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span> Online</div></div></div><button onClick={handleLogout} className="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors"><Icon name="log-out" size={18} className="text-white/60" /></button></div>
-                                <div className="flex justify-center mb-8"><div className="bg-white/5 p-1 rounded-full flex gap-1 border border-white/10">{['dashboard', 'events', 'blog'].map(tab => (<button key={tab} onClick={() => setActiveTab(tab)} className={`px-6 py-2.5 rounded-full text-sm font-medium transition-all flex items-center gap-2 ${activeTab === tab ? 'bg-white text-black shadow-lg' : 'text-white/60 hover:text-white hover:bg-white/5'}`}><Icon name={tab === 'dashboard' ? 'terminal' : tab === 'events' ? 'calendar' : 'book-open'} size={16} /><span className="capitalize">{tab === 'dashboard' ? 'Trang chủ' : tab === 'events' ? 'Sự kiện' : 'Blog'}</span></button>))}</div></div>
+                                <div className="flex justify-center mb-8"><div className="bg-white/5 p-1 rounded-full flex gap-1 border border-white/10">{['dashboard', 'events', 'blog'].map(tab => (<button key={tab} onClick={() => navigateTo(tab)} className={`px-6 py-2.5 rounded-full text-sm font-medium transition-all flex items-center gap-2 ${activeTab === tab ? 'bg-white text-black shadow-lg' : 'text-white/60 hover:text-white hover:bg-white/5'}`}><Icon name={tab === 'dashboard' ? 'terminal' : tab === 'events' ? 'calendar' : 'book-open'} size={16} /><span className="capitalize">{tab === 'dashboard' ? 'Trang chủ' : tab === 'events' ? 'Sự kiện' : 'Blog'}</span></button>))}</div></div>
 
                                 {activeTab === 'dashboard' && (
                                     <div className="grid grid-cols-1 md:grid-cols-12 gap-6 animate-enter">
