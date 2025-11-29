@@ -5,22 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Netflix Access Hub</title>
     
-    <!-- 1. THƯ VIỆN (CDN) -->
+    <!-- 1. THƯ VIỆN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
-    
-    <!-- 2. REACT & BABEL -->
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    <!-- 3. FONT -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;900&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
 
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #050505; color: white; overflow-x: hidden; }
         
-        /* Glassmorphism Cao Cấp */
         .glass-panel {
             background: rgba(20, 20, 20, 0.6);
             backdrop-filter: blur(24px);
@@ -29,22 +25,15 @@
             box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
         }
 
-        /* Animations */
         .animate-enter { animation: enter 0.6s cubic-bezier(0.16, 1, 0.3, 1); }
         @keyframes enter { from { opacity: 0; transform: scale(0.95) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
         
-        /* Ẩn thanh cuộn */
+        .animate-pulse-slow { animation: pulse 6s ease-in-out infinite; }
+        @keyframes pulse { 0%, 100% { opacity: .3; } 50% { opacity: .1; } }
+
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: #000; }
         ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
-
-        /* Gradient Text */
-        .text-gradient {
-            background-clip: text;
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-image: linear-gradient(to right, #fff, #999);
-        }
     </style>
 </head>
 <body class="selection:bg-red-500/30">
@@ -55,43 +44,19 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
-        const { useState, useEffect, useMemo } = React;
+        const { useState, useEffect, memo } = React;
 
-        // --- CẤU HÌNH HỆ THỐNG ---
+        // --- CẤU HÌNH ---
         const EXPIRATION_MINUTES = 16;
         const DEMO_USER = 'admin';
         const DEMO_PASS = '2025';
 
-        // --- COMPONENT ICON (SIÊU TỐI ƯU - KHÔNG LAG) ---
-        // Vẽ trực tiếp SVG từ dữ liệu Lucide thay vì quét DOM
-        const Icon = ({ name, size = 24, className = "" }) => {
-            // Chuyển kebab-case sang PascalCase (vd: calendar-days -> CalendarDays)
-            const pascalName = name.split('-').map(n => n.charAt(0).toUpperCase() + n.slice(1)).join('');
-            const iconData = lucide.icons[pascalName];
-
-            if (!iconData) return null;
-
-            return (
-                <svg 
-                    xmlns="http://www.w3.org/2000/svg" 
-                    width={size} height={size} 
-                    viewBox="0 0 24 24" 
-                    fill="none" 
-                    stroke="currentColor" 
-                    strokeWidth="2" 
-                    strokeLinecap="round" 
-                    strokeLinejoin="round" 
-                    className={className}
-                >
-                    {iconData.map((child, index) => {
-                        const [tag, attrs] = child;
-                        return React.createElement(tag, { ...attrs, key: index });
-                    })}
-                </svg>
-            );
+        // --- UTILS ---
+        const formatNumber = (num) => {
+            try { return new Intl.NumberFormat('vi-VN').format(num); } catch { return "0"; }
         };
 
-        // --- COMPONENTS GIAO DIỆN ---
+        // --- COMPONENTS ---
         const NetflixLogo = () => (
             <div className="w-12 h-12 rounded-[22%] relative overflow-hidden shadow-2xl border border-white/10 bg-black flex-shrink-0 group cursor-pointer">
                 <img src="https://upload.wikimedia.org/wikipedia/commons/f/ff/Netflix-new-icon.png" className="w-full h-full object-cover relative z-10 group-hover:scale-110 transition-transform duration-500" />
@@ -99,94 +64,172 @@
             </div>
         );
 
-        // --- NEW EVENT CARD (ĐỒNG NHẤT & THẲNG HÀNG) ---
-        const EventCard = ({ event }) => {
-            // Tính toán thời gian (Logic trong component để update real-time)
-            const calculateTimeLeft = () => {
-                const diff = +new Date(event.date) - +new Date();
-                if (diff > 0) return {
-                    days: Math.floor(diff / (1000 * 60 * 60 * 24)),
-                    hours: Math.floor((diff / (1000 * 60 * 60)) % 24),
-                    minutes: Math.floor((diff / 1000 / 60) % 60),
-                    seconds: Math.floor((diff / 1000) % 60)
-                };
-                return { days: 0, hours: 0, minutes: 0, seconds: 0 };
-            };
-            
-            const [timeLeft, setTimeLeft] = useState(calculateTimeLeft());
+        // === TÁCH BIỆT ĐỒNG HỒ ĐỂ KHÔNG RE-RENDER CẢ THẺ ===
+        const CountdownTimer = ({ targetDate, isHero }) => {
+            const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
 
             useEffect(() => {
-                const timer = setInterval(() => setTimeLeft(calculateTimeLeft()), 1000);
+                const timer = setInterval(() => {
+                    const diff = +new Date(targetDate) - +new Date();
+                    if (diff > 0) {
+                        setTimeLeft({
+                            days: Math.floor(diff / (1000 * 60 * 60 * 24)),
+                            hours: Math.floor((diff / (1000 * 60 * 60)) % 24),
+                            minutes: Math.floor((diff / 1000 / 60) % 60),
+                            seconds: Math.floor((diff / 1000) % 60)
+                        });
+                    } else {
+                        setTimeLeft({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+                    }
+                }, 1000);
                 return () => clearInterval(timer);
-            }, []);
+            }, [targetDate]);
+
+            if (isHero) {
+                return (
+                   <div className="flex gap-3 justify-center md:justify-start">
+                      {[
+                          { val: timeLeft.days, label: 'Ngày' },
+                          { val: timeLeft.hours, label: 'Giờ' },
+                          { val: timeLeft.minutes, label: 'Phút' },
+                          { val: timeLeft.seconds, label: 'Giây' }
+                      ].map((item, i) => (
+                          <div key={i} className="flex flex-col items-center bg-black/40 border border-white/10 rounded-xl p-3 min-w-[60px]">
+                              <span className="text-xl font-mono font-bold text-white">{item.val}</span>
+                              <span className="text-[9px] uppercase text-white/40 mt-1">{item.label}</span>
+                          </div>
+                      ))}
+                   </div>
+                );
+            }
 
             return (
-                <div className="glass-panel rounded-3xl p-5 flex flex-col relative overflow-hidden group hover:border-white/20 transition-all duration-300 h-full">
-                    {/* Background Glow */}
-                    <div className={`absolute -right-10 -top-10 w-32 h-32 bg-gradient-to-br ${event.color} opacity-10 blur-3xl group-hover:opacity-20 transition-opacity`}></div>
-                    
-                    <div className="flex items-start justify-between mb-6 relative z-10">
-                        <div className={`p-3 rounded-2xl bg-gradient-to-br ${event.color} text-white shadow-lg`}>
-                            <Icon name={event.iconStr} size={24} />
-                        </div>
-                        <div className="text-right">
-                            <p className="text-xs text-white/40 font-bold uppercase tracking-wider mb-1">Đếm ngược</p>
-                            <div className="flex items-baseline gap-1 justify-end">
-                                <span className="text-3xl font-bold text-white font-[JetBrains Mono] tracking-tighter">{timeLeft.days}</span>
-                                <span className="text-xs text-white/50 font-medium">ngày</span>
-                            </div>
-                        </div>
+                <div className="text-right">
+                    <p className="text-[10px] text-white/40 font-bold uppercase tracking-wider mb-1">Đếm ngược</p>
+                    <div className="flex items-baseline gap-1 justify-end">
+                        <span className="text-3xl font-bold text-white font-[JetBrains Mono] tracking-tighter">{timeLeft.days}</span>
+                        <span className="text-xs text-white/50 font-medium">ngày</span>
                     </div>
-
-                    <div className="mt-auto relative z-10">
-                        <h3 className="text-xl font-bold text-white mb-1 truncate">{event.name}</h3>
-                        <div className="flex items-center justify-between border-t border-white/5 pt-3 mt-3">
-                            <div className="flex items-center gap-2 text-xs text-white/50">
-                                <Icon name="calendar" size={12} />
-                                <span>{new Date(event.date).toLocaleDateString('vi-VN')}</span>
-                            </div>
-                            <div className="text-xs text-white/30 font-mono">
-                                {String(timeLeft.hours).padStart(2,'0')}:{String(timeLeft.minutes).padStart(2,'0')}:{String(timeLeft.seconds).padStart(2,'0')}
-                            </div>
-                        </div>
+                    <div className="text-xs text-white/30 font-mono mt-1">
+                        {String(timeLeft.hours).padStart(2,'0')}:{String(timeLeft.minutes).padStart(2,'0')}:{String(timeLeft.seconds).padStart(2,'0')}
                     </div>
                 </div>
             );
         };
 
-        // --- APP LOGIC ---
+        // === THẺ SỰ KIỆN (STATIC WRAPPER - KHÔNG BAO GIỜ RERENDER) ===
+        // Sử dụng React.memo để React không vẽ lại thẻ này khi đồng hồ con chạy
+        const EventCard = memo(({ event, isHero }) => {
+            return (
+                isHero ? (
+                    <div className="col-span-1 md:col-span-2 relative overflow-hidden rounded-[32px] p-8 group border border-white/10 bg-[#111]">
+                        <div className={`absolute inset-0 bg-gradient-to-br ${event.color} opacity-20 group-hover:opacity-30 transition-opacity duration-1000`}></div>
+                        <div className="relative z-10 flex flex-col md:flex-row items-center md:items-start gap-6">
+                           <div className="p-5 bg-white/5 rounded-2xl backdrop-blur-md border border-white/10 shadow-xl text-white">
+                                <i data-lucide={event.iconStr} width="48" height="48"></i>
+                           </div>
+                           <div className="flex-1 text-center md:text-left">
+                               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-[10px] font-bold uppercase tracking-widest text-white/60 mb-3">
+                                   <i data-lucide="star" width="10" height="10"></i> Sự kiện nổi bật
+                               </div>
+                               <h2 className="text-3xl md:text-4xl font-bold text-white mb-2 leading-tight">{event.name}</h2>
+                               <p className="text-white/50 text-sm mb-6">{event.desc}</p>
+                               {/* ĐỒNG HỒ CHẠY RIÊNG Ở ĐÂY */}
+                               <CountdownTimer targetDate={event.date} isHero={true} />
+                           </div>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="glass-panel rounded-3xl p-5 flex flex-col relative overflow-hidden group hover:border-white/20 transition-all duration-300 h-full">
+                        <div className={`absolute -right-10 -top-10 w-32 h-32 bg-gradient-to-br ${event.color} opacity-10 blur-3xl group-hover:opacity-20 transition-opacity`}></div>
+                        
+                        <div className="flex items-start justify-between mb-6 relative z-10">
+                            <div className={`p-3 rounded-2xl bg-gradient-to-br ${event.color} text-white shadow-lg`}>
+                                <i data-lucide={event.iconStr} width="24" height="24"></i>
+                            </div>
+                            {/* ĐỒNG HỒ CHẠY RIÊNG Ở ĐÂY */}
+                            <CountdownTimer targetDate={event.date} isHero={false} />
+                        </div>
+
+                        <div className="mt-auto relative z-10">
+                            <h3 className="text-xl font-bold text-white mb-1 truncate">{event.name}</h3>
+                            <div className="flex items-center gap-2 text-xs text-white/50 border-t border-white/5 pt-3 mt-3">
+                                <i data-lucide="calendar" width="12" height="12"></i>
+                                <span>{new Date(event.date).toLocaleDateString('vi-VN')}</span>
+                            </div>
+                        </div>
+                    </div>
+                )
+            );
+        });
+
+        // --- INSTAGRAM POST ---
+        const InstaPost = memo(({ avatar, username, location, image, caption, likes, time, onLike, isLiked }) => (
+            <div className="glass-panel mb-8 w-full max-w-md mx-auto !rounded-[24px] border-white/5 bg-[#121212]/80 overflow-hidden">
+                <div className="flex items-center justify-between p-4 border-b border-white/5">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-yellow-400 via-red-500 to-purple-500 p-[2px]">
+                            <img src={avatar} className="w-full h-full rounded-full border-2 border-[#121212] object-cover" />
+                        </div>
+                        <div className="leading-tight">
+                            <div className="text-sm font-bold text-white flex items-center gap-1">{username} <i data-lucide="check-circle-2" width="12" className="text-blue-500 fill-blue-500/20"></i></div>
+                            <div className="text-xs text-white/50">{location}</div>
+                        </div>
+                    </div>
+                    <i data-lucide="more-horizontal" className="text-white/60"></i>
+                </div>
+                <div className="relative aspect-[4/5] w-full bg-gray-900 overflow-hidden cursor-pointer group" onDoubleClick={onLike}>
+                   <img src={image} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
+                   <div className={`absolute inset-0 flex items-center justify-center pointer-events-none transition-all duration-300 transform ${isLiked ? 'opacity-0 scale-110' : 'opacity-0 scale-90'}`}>
+                        <i data-lucide="heart" width="100" className="text-white fill-white drop-shadow-2xl"></i>
+                   </div>
+                </div>
+                <div className="p-4">
+                    <div className="flex justify-between items-center mb-4">
+                        <div className="flex gap-5">
+                            <button onClick={onLike} className="transition-transform active:scale-75 hover:opacity-80">
+                                <i data-lucide="heart" width="28" className={isLiked ? "text-red-500 fill-red-500" : "text-white"}></i>
+                            </button>
+                            <i data-lucide="message-circle" width="28" className="text-white hover:opacity-70 cursor-pointer"></i>
+                            <i data-lucide="send" width="28" className="text-white hover:opacity-70 cursor-pointer"></i>
+                        </div>
+                        <i data-lucide="bookmark" width="28" className="text-white hover:opacity-70 cursor-pointer"></i>
+                    </div>
+                    <div className="text-sm font-bold text-white mb-2">{formatNumber(likes)} lượt thích</div>
+                    <div className="text-sm text-white mb-2 leading-relaxed"><span className="font-bold mr-2">{username}</span><span className="text-white/90 whitespace-pre-line" dangerouslySetInnerHTML={{ __html: caption }}></span></div>
+                    <div className="text-white/30 text-[10px] uppercase tracking-wide font-medium">{time}</div>
+                </div>
+            </div>
+        ));
+
+        // --- MAIN APP ---
         const App = () => {
-            // State
-            const [view, setView] = useState('login'); // 'login' | 'app'
+            const [view, setView] = useState('login'); 
             const [activeTab, setActiveTab] = useState('dashboard');
             const [toast, setToast] = useState(null);
-            
-            // Auth State
             const [username, setUsername] = useState('');
             const [password, setPassword] = useState('');
             const [isAuthenticating, setIsAuthenticating] = useState(false);
-
-            // Data State
             const [data, setData] = useState({ verificationLink: '', type: 'waiting', updatedAt: new Date().toISOString() });
             const [dbInstance, setDbInstance] = useState(null);
 
-            // --- DATA ---
-            const EVENTS_LIST = [
-                { id: 1, name: "Giáng Sinh 2025", date: "2025-12-25T00:00:00", iconStr: "gift", color: "from-green-500 to-emerald-700" },
-                { id: 2, name: "Tết Dương Lịch", date: "2026-01-01T00:00:00", iconStr: "party-popper", color: "from-blue-500 to-indigo-700" },
-                { id: 3, name: "Tết Nguyên Đán", date: "2026-02-17T00:00:00", iconStr: "moon", color: "from-red-500 to-orange-600" },
-                { id: 4, name: "Valentine 2026", date: "2026-02-14T00:00:00", iconStr: "heart", color: "from-pink-500 to-rose-600" },
+            // CẤU HÌNH SỰ KIỆN & BLOG
+            const UPCOMING_EVENTS = [
+                { id: 1, name: "Giáng Sinh 2025", date: "2025-12-25T00:00:00", iconStr: "gift", color: "from-green-500 to-emerald-700", desc: "Jingle bells..." },
+                { id: 2, name: "Tết Dương Lịch", date: "2026-01-01T00:00:00", iconStr: "party-popper", color: "from-blue-500 to-indigo-700", desc: "Chào đón năm mới" },
+                { id: 3, name: "Tết Nguyên Đán", date: "2026-02-17T00:00:00", iconStr: "moon", color: "from-red-500 to-orange-600", desc: "Tết Bính Ngọ" },
+                { id: 4, name: "Valentine 2026", date: "2026-02-14T00:00:00", iconStr: "heart", color: "from-pink-500 to-rose-600", desc: "Lễ tình nhân" },
                 { id: 5, name: "Quốc Tế Phụ Nữ", date: "2026-03-08T00:00:00", iconStr: "flower", color: "from-purple-500 to-fuchsia-600" },
-                { id: 6, name: "Giỗ Tổ Hùng Vương", date: "2026-04-25T00:00:00", iconStr: "crown", color: "from-yellow-500 to-amber-600" },
+                { id: 6, name: "Giỗ Tổ Hùng Vương", date: "2026-04-25T00:00:00", iconStr: "crown", color: "from-yellow-500 to-amber-600" }
             ];
-
+            
             const BLOG_POSTS = [
                 { id: 1, u: "fanboi.n1ngn1ng", t: "2 giờ trước", i: "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f4/Aespa%27s_Ningning_4.jpg/600px-Aespa%27s_Ningning_4.jpg", c: "Người ta nói uống rượu mới say, còn tôi chỉ cần nhìn vào ánh mắt ấy là đủ lạc lối cả một đời... 🥀🖤", l: 360291 },
                 { id: 2, u: "fanboi.n1ngn1ng", t: "1 ngày trước", i: "https://upload.wikimedia.org/wikipedia/commons/thumb/0/02/2023_MMA_aespa_Ningning_1.jpg/409px-2023_MMA_aespa_Ningning_1.jpg", c: "Thành phố này rộng lớn đến thế, nhưng tìm một người để nắm tay đi hết đoạn đường sao khó quá... 🌧️", l: 150432 },
                 { id: 3, u: "fanboi.n1ngn1ng", t: "2 ngày trước", i: "https://upload.wikimedia.org/wikipedia/commons/thumb/5/52/Aespa_Ningning_2024_MMA.jpg/435px-Aespa_Ningning_2024_MMA.jpg", c: "Nếu nỗi nhớ là những hạt mưa, anh đã làm ướt cả bầu trời của em rồi đấy. ✨🌙", l: 289201 }
             ];
 
-            // --- INIT ---
+            // INIT
             useEffect(() => {
                 const firebaseConfig = {
                     // ⚠️⚠️⚠️ DÁN LINK FIREBASE CỦA BẠN VÀO DƯỚI ĐÂY ⚠️⚠️⚠️
@@ -198,13 +241,19 @@
                         const database = getDatabase(app);
                         setDbInstance(database);
                     }
-                } catch (e) { console.error("FB Error", e); }
+                } catch (e) { console.error(e); }
             }, []);
 
+            // RE-RENDER ICONS WHEN TAB CHANGES
+            useEffect(() => {
+                lucide.createIcons();
+            });
+
+            // SYNC DATA
             useEffect(() => {
                 if (dbInstance && view === 'app') {
                     const dataRef = ref(dbInstance, 'netflix_data');
-                    const unsubscribe = onValue(dataRef, (snapshot) => {
+                    onValue(dataRef, (snapshot) => {
                         if (snapshot.exists()) {
                             const val = snapshot.val();
                             const newData = {
@@ -213,18 +262,16 @@
                                 updatedAt: val.updatedAt || new Date().toISOString()
                             };
                             setData(newData);
-                            // Check new link notify
+                            
                             const diff = (new Date() - new Date(newData.updatedAt)) / 1000 / 60;
                             if(newData.type === 'link_ready' && diff < EXPIRATION_MINUTES) {
                                 showNotification('success', '🔔 Có liên kết xác minh mới!');
                             }
                         }
                     });
-                    return () => unsubscribe();
                 }
             }, [dbInstance, view]);
 
-            // --- ACTIONS ---
             const showNotification = (type, msg) => {
                 setToast({ type, msg });
                 setTimeout(() => setToast(null), 3000);
@@ -238,7 +285,7 @@
                         setView('app');
                         showNotification('success', 'Đăng nhập thành công');
                     } else {
-                        showNotification('error', 'Sai mật khẩu! (admin/2025)');
+                        showNotification('error', 'Sai mật khẩu!');
                     }
                     setIsAuthenticating(false);
                 }, 1000);
@@ -254,14 +301,12 @@
                 showNotification('success', 'Đã sao chép liên kết!');
             };
 
-            // --- LOGIC RENDER HELPERS ---
             const isLinkExpired = (() => {
                 try {
                     const diff = new Date() - new Date(data.updatedAt);
                     return (diff / 1000 / 60) >= EXPIRATION_MINUTES;
                 } catch { return true; }
             })();
-            
             const isLinkReady = data.type === 'link_ready' && !isLinkExpired;
 
             const formatTime = (str) => {
@@ -272,10 +317,9 @@
                 } catch { return "Vừa xong"; }
             };
 
-            // === MAIN RENDER ===
             return (
                 <div className="min-h-screen relative overflow-hidden">
-                    {/* BACKGROUND (Fixed) */}
+                    {/* BG */}
                     <div className="fixed inset-0 z-0 pointer-events-none">
                         <div className="absolute top-[-20%] right-[-10%] w-[60vw] h-[60vw] rounded-full bg-purple-900/20 blur-[120px] animate-pulse-slow"></div>
                         <div className="absolute bottom-[-10%] left-[-10%] w-[50vw] h-[50vw] rounded-full bg-red-900/10 blur-[120px] animate-pulse-slow"></div>
@@ -286,13 +330,13 @@
                     {toast && (
                         <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 animate-enter">
                             <div className={`glass-panel px-6 py-3 rounded-full flex items-center gap-3 shadow-2xl border ${toast.type === 'error' ? 'border-red-500/30 text-red-400' : 'border-green-500/30 text-green-400'}`}>
-                                <Icon name={toast.type === 'error' ? 'alert-circle' : 'check-circle-2'} size={18} />
+                                <i data-lucide={toast.type === 'error' ? 'alert-circle' : 'check-circle-2'} width="18"></i>
                                 <span className="text-sm font-medium text-white">{toast.msg}</span>
                             </div>
                         </div>
                     )}
 
-                    {/* === LOGIN VIEW === */}
+                    {/* VIEW: LOGIN */}
                     {view === 'login' && (
                         <div className="min-h-screen flex items-center justify-center p-6 relative z-10 animate-enter">
                             <div className="glass-panel p-10 w-full max-w-md rounded-[32px]">
@@ -303,184 +347,97 @@
                                 </div>
                                 <form onSubmit={handleLogin} className="space-y-4">
                                     <div className="relative group">
-                                        <div className="absolute left-4 top-3.5 text-white/30"><Icon name="user" size={18} /></div>
+                                        <div className="absolute left-4 top-3.5 text-white/30"><i data-lucide="user" width="18"></i></div>
                                         <input type="text" placeholder="Tên đăng nhập" value={username} onChange={e => setUsername(e.target.value)} 
                                             className="w-full bg-black/40 border border-white/10 rounded-2xl py-3.5 pl-11 pr-4 text-white placeholder-white/20 focus:outline-none focus:border-white/30 transition-colors" />
                                     </div>
                                     <div className="relative group">
-                                        <div className="absolute left-4 top-3.5 text-white/30"><Icon name="lock" size={18} /></div>
+                                        <div className="absolute left-4 top-3.5 text-white/30"><i data-lucide="lock" width="18"></i></div>
                                         <input type="password" placeholder="Mật khẩu" value={password} onChange={e => setPassword(e.target.value)}
                                             className="w-full bg-black/40 border border-white/10 rounded-2xl py-3.5 pl-11 pr-4 text-white placeholder-white/20 focus:outline-none focus:border-white/30 transition-colors" />
                                     </div>
                                     <button type="submit" disabled={isAuthenticating} 
                                         className="w-full bg-white text-black font-bold py-4 rounded-2xl mt-4 hover:bg-gray-200 transition-all flex justify-center items-center gap-2 active:scale-[0.98]">
-                                        {isAuthenticating ? <Icon name="loader-2" className="animate-spin" /> : "Đăng nhập"}
+                                        {isAuthenticating ? <i data-lucide="loader-2" class="animate-spin"></i> : "Đăng nhập"}
                                     </button>
                                 </form>
+                                <div className="mt-6 text-center text-xs text-white/20">Demo: admin / 2025</div>
                             </div>
                         </div>
                     )}
 
-                    {/* === APP VIEW (DASHBOARD) === */}
+                    {/* VIEW: APP */}
                     {view === 'app' && (
                         <div className="min-h-screen relative z-10 p-4 md:p-8 animate-enter">
                             <div className="max-w-7xl mx-auto">
-                                {/* HEADER */}
                                 <div className="flex justify-between items-center mb-10 px-2">
-                                    <div className="flex items-center gap-4">
-                                        <NetflixLogo />
-                                        <div>
-                                            <h1 className="text-lg font-bold tracking-tight text-white">Access Hub</h1>
-                                            <div className="flex items-center gap-2 text-xs text-white/40">
-                                                <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span> Online
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <button onClick={() => setView('login')} className="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors">
-                                        <Icon name="log-out" size={18} className="text-white/60" />
-                                    </button>
+                                    <div className="flex items-center gap-4"><NetflixLogo /><div><h1 className="text-lg font-bold tracking-tight text-white">Access Hub</h1><div className="flex items-center gap-2 text-xs text-white/40"><span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span> Online</div></div></div>
+                                    <button onClick={() => setView('login')} className="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors"><i data-lucide="log-out" width="18" class="text-white/60"></i></button>
                                 </div>
 
-                                {/* NAVIGATION */}
                                 <div className="flex justify-center mb-8">
                                     <div className="bg-white/5 p-1 rounded-full flex gap-1 border border-white/10">
                                         {['dashboard', 'events', 'blog'].map(tab => (
                                             <button key={tab} onClick={() => setActiveTab(tab)}
                                                 className={`px-6 py-2.5 rounded-full text-sm font-medium transition-all flex items-center gap-2 ${activeTab === tab ? 'bg-white text-black shadow-lg' : 'text-white/60 hover:text-white hover:bg-white/5'}`}>
-                                                <Icon name={tab === 'dashboard' ? 'terminal' : tab === 'events' ? 'calendar' : 'book-open'} size={16} />
+                                                <i data-lucide={tab === 'dashboard' ? 'terminal' : tab === 'events' ? 'calendar' : 'book-open'} width="16"></i>
                                                 <span className="capitalize">{tab === 'dashboard' ? 'Trang chủ' : tab === 'events' ? 'Sự kiện' : 'Blog'}</span>
                                             </button>
                                         ))}
                                     </div>
                                 </div>
 
-                                {/* --- TAB CONTENT --- */}
-                                
-                                {/* 1. DASHBOARD */}
                                 {activeTab === 'dashboard' && (
                                     <div className="grid grid-cols-1 md:grid-cols-12 gap-6 animate-enter">
-                                        {/* Left Panel */}
                                         <div className="md:col-span-4 flex flex-col gap-6">
                                             <div className="glass-panel p-6 rounded-[32px] h-full flex flex-col">
-                                                <div className="flex items-center gap-3 mb-6 text-blue-400">
-                                                    <div className="p-2 bg-blue-500/10 rounded-lg"><Icon name="book-open" size={20} /></div>
-                                                    <h2 className="font-bold text-lg text-white">Hướng dẫn</h2>
-                                                </div>
+                                                <div className="flex items-center gap-3 mb-6 text-blue-400"><div className="p-2 bg-blue-500/10 rounded-lg"><i data-lucide="book-open" width="20"></i></div><h2 className="font-bold text-lg text-white">Hướng dẫn</h2></div>
                                                 <div className="space-y-8 relative pl-2 flex-1">
                                                     <div className="absolute left-[15px] top-2 bottom-2 w-[2px] bg-white/5"></div>
-                                                    {[
-                                                        { icon: 'tv', color: 'text-blue-400', title: 'Thao tác Tivi', desc: 'Chọn "Cập nhật hộ gia đình" -> Nhấn "Gửi Email".' },
-                                                        { icon: 'loader-2', color: 'text-yellow-400', title: 'Chờ tại đây', desc: 'Link xác minh sẽ tự động hiện ra bên phải (khoảng 1 phút).' },
-                                                        { icon: 'external-link', color: 'text-green-400', title: 'Mở Link', desc: 'Bấm nút "Mở Link" để hoàn tất xác minh.' }
-                                                    ].map((step, i) => (
-                                                        <div key={i} className="relative pl-12">
-                                                            <div className={`absolute left-0 top-0 w-8 h-8 rounded-full bg-white/5 border border-white/10 flex items-center justify-center ${step.color}`}>
-                                                                <Icon name={step.icon} size={14} className={step.icon === 'loader-2' ? 'animate-spin' : ''} />
-                                                            </div>
-                                                            <h3 className="font-semibold text-white text-sm mb-1">{step.title}</h3>
-                                                            <p className="text-xs text-white/40 leading-relaxed">{step.desc}</p>
-                                                        </div>
-                                                    ))}
+                                                    {[{icon:'tv',color:'text-blue-400',t:'Thao tác Tivi',d:'Chọn "Cập nhật hộ gia đình" -> Nhấn "Gửi Email".'},{icon:'loader-2',color:'text-yellow-400',t:'Chờ tại đây',d:'Link xác minh sẽ tự động hiện ra bên phải (khoảng 1 phút).'},{icon:'external-link',color:'text-green-400',t:'Mở Link',d:'Bấm nút "Mở Link" để hoàn tất xác minh.'}].map((s,i)=>(<div key={i} className="relative pl-12"><div className={`absolute left-0 top-0 w-8 h-8 rounded-full bg-white/5 border border-white/10 flex items-center justify-center ${s.color}`}><i data-lucide={s.icon} width="14" class={s.icon==='loader-2'?'animate-spin':''}></i></div><h3 className="font-semibold text-white text-sm mb-1">{s.t}</h3><p className="text-xs text-white/40 leading-relaxed">{s.d}</p></div>))}
                                                 </div>
                                             </div>
                                         </div>
-
-                                        {/* Right Panel (Main Tool) */}
                                         <div className="md:col-span-8">
                                             <div className="glass-panel h-full p-8 md:p-16 rounded-[32px] flex flex-col justify-center items-center text-center relative overflow-hidden">
-                                                {/* Dynamic Background */}
                                                 <div className={`absolute inset-0 opacity-20 transition-all duration-1000 bg-gradient-to-br ${isLinkReady ? 'from-blue-600 to-purple-900' : 'from-red-600 to-black'}`}></div>
-                                                
                                                 <div className="relative z-10 w-full max-w-md">
-                                                    {/* Status Chip */}
                                                     <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full border text-xs font-bold uppercase tracking-wider shadow-lg mb-8 ${isLinkReady ? 'bg-blue-500/20 border-blue-500/30 text-blue-300' : 'bg-white/5 border-white/10 text-white/50'}`}>
-                                                        <Icon name={isLinkReady ? 'zap' : 'shield-check'} size={14} className={isLinkReady ? 'fill-blue-300 animate-pulse' : ''} />
-                                                        {isLinkReady ? 'Link Ready' : 'System Active'}
+                                                        <i data-lucide={isLinkReady?'zap':'shield-check'} width="14" class={isLinkReady?'fill-blue-300 animate-pulse':''}></i>{isLinkReady?'Link Ready':'System Active'}
                                                     </div>
-
                                                     {isLinkReady ? (
                                                         <div className="animate-enter">
                                                             <div className="bg-[#0a0a0a] border border-blue-500/30 rounded-2xl p-1 pl-4 flex items-center gap-4 mb-6 shadow-2xl shadow-blue-900/20">
-                                                                <Icon name="key" className="text-blue-400 shrink-0" />
-                                                                <div className="flex-1 truncate text-left">
-                                                                    <div className="text-[10px] text-blue-500/50 font-bold uppercase tracking-wider">Secure Link</div>
-                                                                    <div className="text-sm text-blue-100 font-mono truncate w-full">{data.verificationLink}</div>
-                                                                </div>
-                                                                <button onClick={handleCopy} className="p-3 bg-white/10 hover:bg-white/20 rounded-xl text-white transition-colors"><Icon name="copy" size={18} /></button>
+                                                                <i data-lucide="key" class="text-blue-400 shrink-0"></i><div className="flex-1 truncate text-left"><div className="text-[10px] text-blue-500/50 font-bold uppercase tracking-wider">Secure Link</div><div className="text-sm text-blue-100 font-mono truncate w-full">{data.verificationLink}</div></div>
+                                                                <button onClick={handleCopy} className="p-3 bg-white/10 hover:bg-white/20 rounded-xl text-white transition-colors"><i data-lucide="copy" width="18"></i></button>
                                                             </div>
-                                                            <a href={data.verificationLink} target="_blank" className="block w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-2xl shadow-[0_0_40px_rgba(37,99,235,0.4)] hover:shadow-[0_0_60px_rgba(37,99,235,0.6)] transition-all active:scale-[0.98] flex items-center justify-center gap-2">
-                                                                <Icon name="external-link" size={20} /> Mở Link Xác Minh
-                                                            </a>
+                                                            <a href={data.verificationLink} target="_blank" className="block w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-2xl shadow-[0_0_40px_rgba(37,99,235,0.4)] hover:shadow-[0_0_60px_rgba(37,99,235,0.6)] transition-all active:scale-[0.98] flex items-center justify-center gap-2"><i data-lucide="external-link" width="20"></i> Mở Link Xác Minh</a>
                                                         </div>
                                                     ) : (
-                                                        <div className={`py-16 border-2 border-dashed rounded-3xl flex flex-col items-center justify-center ${isExpired && data.type === 'link_ready' ? 'border-yellow-500/30 bg-yellow-500/5' : 'border-white/10 bg-white/5'}`}>
-                                                            <div className={`mb-4 p-4 rounded-full ${isExpired ? 'bg-yellow-500/10 text-yellow-500' : 'bg-white/5 text-white/20'}`}>
-                                                                <Icon name={isExpired ? "alert-triangle" : "lock"} size={32} />
-                                                            </div>
-                                                            <h3 className="text-white/50 font-bold text-lg">{isExpired ? "Link đã hết hạn" : "Đang chờ liên kết..."}</h3>
-                                                            <p className="text-white/30 text-sm mt-2 max-w-xs mx-auto">{isExpired ? "Vui lòng gửi lại mail mới." : "Hệ thống đang quét mail..."}</p>
+                                                        <div className={`py-16 border-2 border-dashed rounded-3xl flex flex-col items-center justify-center ${isLinkExpired&&data.type==='link_ready'?'border-yellow-500/30 bg-yellow-500/5':'border-white/10 bg-white/5'}`}>
+                                                            <div className={`mb-4 p-4 rounded-full ${isLinkExpired&&data.type==='link_ready'?'bg-yellow-500/10 text-yellow-500':'bg-white/5 text-white/20'}`}><i data-lucide={isLinkExpired&&data.type==='link_ready'?'alert-triangle':'lock'} width="32"></i></div>
+                                                            <h3 className="text-white/50 font-bold text-lg">{isLinkExpired&&data.type==='link_ready'?"Link đã hết hạn":"Đang chờ liên kết..."}</h3>
+                                                            <p className="text-white/30 text-sm mt-2 max-w-xs mx-auto">{isLinkExpired&&data.type==='link_ready'?"Vui lòng gửi lại mail mới.":"Hệ thống đang quét mail..."}</p>
                                                         </div>
                                                     )}
-                                                    
-                                                    <div className="mt-8 flex items-center justify-center gap-2 text-xs text-white/30 font-mono">
-                                                        <Icon name="refresh-cw" size={12} className={!isLinkReady ? "animate-spin" : ""} />
-                                                        Cập nhật: {formatTime(data.updatedAt)}
-                                                    </div>
+                                                    <div className="mt-8 flex items-center justify-center gap-2 text-xs text-white/30 font-mono"><i data-lucide="refresh-cw" width="12" class={!isLinkReady?'animate-spin':''}></i> Cập nhật: {formatTime(data.updatedAt)}</div>
                                                 </div>
                                             </div>
                                         </div>
                                     </div>
                                 )}
 
-                                {/* 2. EVENTS (NEW GRID DESIGN) */}
                                 {activeTab === 'events' && (
                                     <div className="animate-enter pb-12">
                                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                                            {UPCOMING_EVENTS.sort((a,b) => new Date(a.date) - new Date(b.date)).map((event, index) => (
-                                                <EventCard key={event.id} event={event} />
-                                            ))}
+                                            {UPCOMING_EVENTS.sort((a,b)=>new Date(a.date)-new Date(b.date)).map(event => <EventCard key={event.id} event={event} isHero={UPCOMING_EVENTS.indexOf(event)===0} />)}
                                         </div>
                                     </div>
                                 )}
 
-                                {/* 3. BLOG */}
                                 {activeTab === 'blog' && (
                                     <div className="max-w-md mx-auto animate-enter pb-12">
-                                        {BLOG_POSTS.map(post => (
-                                            <div key={post.id} className="glass-panel mb-8 rounded-3xl overflow-hidden">
-                                                <div className="flex items-center justify-between p-4 border-b border-white/5">
-                                                    <div className="flex items-center gap-3">
-                                                        <div className="w-10 h-10 rounded-full p-[2px] bg-gradient-to-tr from-yellow-400 via-red-500 to-purple-500">
-                                                            <img src={post.i} className="w-full h-full rounded-full border-2 border-black object-cover" />
-                                                        </div>
-                                                        <div className="leading-tight">
-                                                            <div className="text-sm font-bold text-white flex items-center gap-1">{post.u} <Icon name="check-circle-2" size={12} className="text-blue-500 fill-blue-500/20" /></div>
-                                                            <div className="text-xs text-white/50">Seoul, Korea</div>
-                                                        </div>
-                                                    </div>
-                                                    <Icon name="more-horizontal" className="text-white/60" />
-                                                </div>
-                                                <div className="relative aspect-[4/5] w-full bg-gray-900">
-                                                    <img src={post.i} className="w-full h-full object-cover" />
-                                                </div>
-                                                <div className="p-4">
-                                                    <div className="flex justify-between mb-4">
-                                                        <div className="flex gap-4">
-                                                            <Icon name="heart" size={26} className="text-white hover:text-red-500 transition-colors cursor-pointer" />
-                                                            <Icon name="message-circle" size={26} className="text-white hover:opacity-70 cursor-pointer" />
-                                                            <Icon name="send" size={26} className="text-white hover:opacity-70 cursor-pointer" />
-                                                        </div>
-                                                        <Icon name="bookmark" size={26} className="text-white hover:opacity-70 cursor-pointer" />
-                                                    </div>
-                                                    <div className="text-sm font-bold text-white mb-2">{formatNumber(post.l)} lượt thích</div>
-                                                    <div className="text-sm text-white/90 leading-relaxed mb-2">
-                                                        <span className="font-bold mr-2 text-white">{post.u}</span>
-                                                        {post.c}
-                                                    </div>
-                                                    <div className="text-[10px] text-white/40 uppercase font-bold tracking-wide">{post.t}</div>
-                                                </div>
-                                            </div>
-                                        ))}
+                                        {BLOG_POSTS.map(post => <InstaPost key={post.id} {...post} />)}
                                     </div>
                                 )}
                             </div>
