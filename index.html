@@ -46,7 +46,7 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
-        const { useState, useEffect, memo, useLayoutEffect } = React;
+        const { useState, useEffect, memo, useLayoutEffect, useCallback } = React;
 
         // --- CẤU HÌNH ---
         const EXPIRATION_MINUTES = 16;
@@ -91,19 +91,27 @@
         };
 
         // === EVENT COMPONENTS ===
+        // FIX: Tách hàm tính toán ra ngoài để dùng lại
+        const calculateTimeLeft = (targetDate) => {
+            const diff = +new Date(targetDate) - +new Date();
+            if (diff > 0) {
+                return {
+                    days: Math.floor(diff / (1000 * 60 * 60 * 24)),
+                    hours: Math.floor((diff / (1000 * 60 * 60)) % 24),
+                    minutes: Math.floor((diff / 1000 / 60) % 60),
+                    seconds: Math.floor((diff / 1000) % 60)
+                };
+            }
+            return { days: 0, hours: 0, minutes: 0, seconds: 0 };
+        };
+
         const CountdownTimer = ({ targetDate, isHero }) => {
-            const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+            // FIX: Khởi tạo state bằng hàm tính toán NGAY LẬP TỨC thay vì để 0
+            const [timeLeft, setTimeLeft] = useState(() => calculateTimeLeft(targetDate));
+
             useEffect(() => {
                 const timer = setInterval(() => {
-                    const diff = +new Date(targetDate) - +new Date();
-                    if (diff > 0) {
-                        setTimeLeft({
-                            days: Math.floor(diff / (1000 * 60 * 60 * 24)),
-                            hours: Math.floor((diff / (1000 * 60 * 60)) % 24),
-                            minutes: Math.floor((diff / 1000 / 60) % 60),
-                            seconds: Math.floor((diff / 1000) % 60)
-                        });
-                    } else setTimeLeft({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+                    setTimeLeft(calculateTimeLeft(targetDate));
                 }, 1000);
                 return () => clearInterval(timer);
             }, [targetDate]);
@@ -357,7 +365,6 @@
                 showNotification('success', 'Đã sao chép liên kết!');
             };
             
-            // FIX: Like Logic Update - Now updates count!
             const handleLike = (id) => {
                 setPosts(currentPosts => currentPosts.map(p => {
                     if (p.id === id) {
