@@ -17,7 +17,6 @@
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #050505; color: white; overflow-x: hidden; -webkit-tap-highlight-color: transparent; }
         
-        /* OPTIMIZED GLASS PANEL */
         .glass-panel {
             background: rgba(22, 22, 22, 0.85);
             backdrop-filter: blur(12px);
@@ -46,10 +45,10 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
-        const { useState, useEffect, memo, useLayoutEffect, useCallback } = React;
+        const { useState, useEffect, memo, useLayoutEffect } = React;
 
         // --- CẤU HÌNH ---
-        const EXPIRATION_MINUTES = 16;
+        const EXPIRATION_MINUTES = 15;
         const DEMO_USER = 'admin';
         const DEMO_PASS = '2025';
 
@@ -91,7 +90,6 @@
         };
 
         // === EVENT COMPONENTS ===
-        // FIX: Tách hàm tính toán ra ngoài để dùng lại
         const calculateTimeLeft = (targetDate) => {
             const diff = +new Date(targetDate) - +new Date();
             if (diff > 0) {
@@ -106,7 +104,6 @@
         };
 
         const CountdownTimer = ({ targetDate, isHero }) => {
-            // FIX: Khởi tạo state bằng hàm tính toán NGAY LẬP TỨC thay vì để 0
             const [timeLeft, setTimeLeft] = useState(() => calculateTimeLeft(targetDate));
 
             useEffect(() => {
@@ -221,7 +218,10 @@
             const [username, setUsername] = useState('');
             const [password, setPassword] = useState('');
             const [isAuthenticating, setIsAuthenticating] = useState(false);
+            
             const [data, setData] = useState({ verificationLink: '', type: 'waiting', updatedAt: new Date().toISOString() });
+            const [isDataLoaded, setIsDataLoaded] = useState(false);
+            
             const [dbInstance, setDbInstance] = useState(null);
 
             // --- AUTO SCROLL TOP FIX ---
@@ -295,7 +295,7 @@
             useEffect(() => {
                 const firebaseConfig = {
                     // ⚠️⚠️⚠️ DÁN LINK FIREBASE CỦA BẠN VÀO ĐÂY ⚠️⚠️⚠️
-                    databaseURL: "https://netflix-household-776de-default-rtdb.asia-southeast1.firebasedatabase.app/", 
+                    databaseURL: "https://YOUR_PROJECT_ID.firebasedatabase.app", 
                 };
                 try {
                     if (firebaseConfig.databaseURL && !firebaseConfig.databaseURL.includes("YOUR_PROJECT")) {
@@ -310,6 +310,7 @@
                 if (dbInstance && view === 'app') {
                     const dataRef = ref(dbInstance, 'netflix_data');
                     onValue(dataRef, (snapshot) => {
+                        setIsDataLoaded(true); 
                         if (snapshot.exists()) {
                             const val = snapshot.val();
                             const newData = {
@@ -372,7 +373,7 @@
                         return { 
                             ...p, 
                             isLiked: newIsLiked,
-                            likes: p.likes + (newIsLiked ? 1 : -1) // Increase if liking, decrease if unliking
+                            likes: p.likes + (newIsLiked ? 1 : -1)
                         };
                     }
                     return p;
@@ -392,7 +393,6 @@
                 <div className="min-h-screen relative overflow-hidden">
                     <div className="fixed inset-0 z-0 pointer-events-none transform-gpu"><div className="absolute top-[-20%] right-[-10%] w-[60vw] h-[60vw] rounded-full bg-purple-900/20 blur-[120px] animate-pulse-slow"></div><div className="absolute bottom-[-10%] left-[-10%] w-[50vw] h-[50vw] rounded-full bg-red-900/10 blur-[120px] animate-pulse-slow"></div><div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20"></div></div>
                     
-                    {/* Fixed Mobile Toast */}
                     {toast && <div className="fixed top-6 right-6 z-[100] animate-enter"><div className={`px-6 py-3 rounded-full flex items-center gap-3 shadow-2xl border bg-[#1a1a1a] ${toast.type==='error'?'border-red-500/30 text-red-400':'border-green-500/30 text-green-400'}`}><Icon name={toast.type==='error'?'alert-circle':'check-circle-2'} size={18} /><span className="text-sm font-medium text-white">{toast.msg}</span></div></div>}
 
                     {view === 'login' && (
@@ -467,22 +467,33 @@
                                                 </div>
                                             </div>
                                         </div>
-                                        <div className="md:col-span-8">
-                                            <div className="glass-panel h-full p-8 md:p-16 rounded-[32px] flex flex-col justify-center items-center text-center relative overflow-hidden">
+                                        
+                                        {/* SPLIT RIGHT COLUMN */}
+                                        <div className="md:col-span-8 flex flex-col gap-6">
+                                            {/* TOP: MAIN TOOL */}
+                                            <div className="glass-panel p-8 md:p-12 rounded-[32px] flex flex-col justify-center items-center text-center relative overflow-hidden flex-1 min-h-[300px]">
                                                 <div className={`absolute inset-0 opacity-20 transition-all duration-1000 bg-gradient-to-br ${isLinkReady ? 'from-blue-600 to-purple-900' : 'from-red-600 to-black'}`}></div>
                                                 <div className="relative z-10 w-full max-w-md">
-                                                    
-                                                    <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full border text-xs font-bold uppercase tracking-wider shadow-lg mb-8 ${isLinkReady ? 'bg-blue-500/20 border-blue-500/30 text-blue-300' : 'bg-green-500/10 border-green-500/20 text-green-400 shadow-[0_0_20px_rgba(74,222,128,0.1)]'}`}>
-                                                        <Icon name={isLinkReady?'zap':'shield-check'} size={14} className={isLinkReady?'fill-blue-300 animate-pulse':'text-green-400'} />
-                                                        {isLinkReady?'Link Ready':'System Active'}
-                                                    </div>
-                                                    
-                                                    {isLinkReady ? (<div className="animate-enter"><div className="bg-[#0a0a0a] border border-blue-500/30 rounded-2xl p-1 pl-4 flex items-center gap-4 mb-6 shadow-2xl shadow-blue-900/20"><Icon name="key" className="text-blue-400 shrink-0" size={20} /><div className="flex-1 truncate text-left"><div className="text-[10px] text-blue-500/50 font-bold uppercase tracking-wider">Secure Link</div><div className="text-sm text-blue-100 font-mono truncate w-full">{data.verificationLink}</div></div><button onClick={handleCopy} className="p-3 bg-white/10 hover:bg-white/20 rounded-xl text-white transition-colors"><Icon name="copy" size={18} /></button></div><a href={data.verificationLink} target="_blank" className="block w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-2xl shadow-[0_0_40px_rgba(37,99,235,0.4)] hover:shadow-[0_0_60px_rgba(37,99,235,0.6)] transition-all active:scale-[0.98] flex items-center justify-center gap-2"><Icon name="external-link" size={20} /> Mở Link Xác Minh</a></div>) : (<div className={`py-16 border-2 border-dashed rounded-3xl flex flex-col items-center justify-center ${isLinkExpired&&data.type==='link_ready'?'border-yellow-500/30 bg-yellow-500/5':'border-white/10 bg-white/5'}`}><div className={`mb-4 p-4 rounded-full ${isLinkExpired&&data.type==='link_ready'?'bg-yellow-500/10 text-yellow-500':'bg-white/5 text-white/20'}`}><Icon name={isLinkExpired&&data.type==='link_ready'?'alert-triangle':'lock'} size={32} /></div><h3 className="text-white/50 font-bold text-lg">{isLinkExpired&&data.type==='link_ready'?"Link đã hết hạn":"Đang chờ liên kết..."}</h3><p className="text-white/30 text-sm mt-2 max-w-xs mx-auto">{isLinkExpired&&data.type==='link_ready'?"Vui lòng gửi lại mail mới.":"Hệ thống đang quét mail..."}</p></div>)}
-                                                    <div className="mt-8 flex items-center justify-center gap-2 text-xs text-white/30 font-mono"><Icon name="refresh-cw" size={12} className={!isLinkReady?'animate-spin':''} /> Cập nhật: {formatTime(data.updatedAt)}</div>
+                                                    {!isDataLoaded ? (
+                                                        <div className="py-16 flex flex-col items-center justify-center">
+                                                            <Icon name="loader-2" className="animate-spin text-white/30" size={48} />
+                                                            <p className="text-white/30 text-sm mt-4 font-mono">Đang đồng bộ dữ liệu...</p>
+                                                        </div>
+                                                    ) : (
+                                                        <>
+                                                            <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full border text-xs font-bold uppercase tracking-wider shadow-lg mb-8 ${isLinkReady ? 'bg-blue-500/20 border-blue-500/30 text-blue-300' : 'bg-green-500/10 border-green-500/20 text-green-400 shadow-[0_0_20px_rgba(74,222,128,0.1)]'}`}>
+                                                                <Icon name={isLinkReady?'zap':'shield-check'} size={14} className={isLinkReady?'fill-blue-300 animate-pulse':'text-green-400'} />
+                                                                {isLinkReady?'Link Ready':'System Active'}
+                                                            </div>
+                                                            
+                                                            {isLinkReady ? (<div className="animate-enter"><div className="bg-[#0a0a0a] border border-blue-500/30 rounded-2xl p-1 pl-4 flex items-center gap-4 mb-6 shadow-2xl shadow-blue-900/20"><Icon name="key" className="text-blue-400 shrink-0" size={20} /><div className="flex-1 truncate text-left"><div className="text-[10px] text-blue-500/50 font-bold uppercase tracking-wider">Secure Link</div><div className="text-sm text-blue-100 font-mono break-all w-full leading-tight">{data.verificationLink}</div></div><button onClick={handleCopy} className="p-3 bg-white/10 hover:bg-white/20 rounded-xl text-white transition-colors flex-shrink-0"><Icon name="copy" size={18} /></button></div><a href={data.verificationLink} target="_blank" className="block w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-2xl shadow-[0_0_40px_rgba(37,99,235,0.4)] hover:shadow-[0_0_60px_rgba(37,99,235,0.6)] transition-all active:scale-[0.98] flex items-center justify-center gap-2"><Icon name="external-link" size={20} /> Mở Link Xác Minh</a></div>) : (<div className={`py-16 border-2 border-dashed rounded-3xl flex flex-col items-center justify-center ${isLinkExpired&&data.type==='link_ready'?'border-yellow-500/30 bg-yellow-500/5':'border-white/10 bg-white/5'}`}><div className={`mb-4 p-4 rounded-full ${isLinkExpired&&data.type==='link_ready'?'bg-yellow-500/10 text-yellow-500':'bg-white/5 text-white/20'}`}><Icon name={isLinkExpired&&data.type==='link_ready'?'alert-triangle':'lock'} size={32} /></div><h3 className="text-white/50 font-bold text-lg">{isLinkExpired&&data.type==='link_ready'?"Link đã hết hạn":"Đang chờ liên kết..."}</h3><p className="text-white/30 text-sm mt-2 max-w-xs mx-auto">{isLinkExpired&&data.type==='link_ready'?"Vui lòng gửi lại mail mới.":"Hệ thống đang quét mail..."}</p></div>)}
+                                                            <div className="mt-8 flex items-center justify-center gap-2 text-xs text-white/30 font-mono"><Icon name="refresh-cw" size={12} className={!isLinkReady?'animate-spin':''} /> Cập nhật: {formatTime(data.updatedAt)}</div>
+                                                        </>
+                                                    )}
                                                 </div>
                                             </div>
-                                        </div>
-                                        <div className="md:col-span-12">
+
+                                            {/* BOTTOM: DONATE PANEL */}
                                             <div className="glass-panel p-6 rounded-[32px] flex flex-col xl:flex-row items-center justify-between gap-6">
                                                 <div className="flex items-center gap-4">
                                                     <div className="w-12 h-12 bg-pink-500/20 rounded-full flex items-center justify-center border border-pink-500/30">
@@ -493,7 +504,6 @@
                                                         <p className="text-white/40 text-sm">Ly cà phê giúp duy trì server hoạt động 24/7.</p>
                                                     </div>
                                                 </div>
-                                                {/* FIX: Use flex-col for mobile to stack buttons, avoiding overflow */}
                                                 <div className="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
                                                     <div className="flex-1 md:flex-none bg-gradient-to-br from-[#a50064] to-[#d9378b] border border-white/10 rounded-2xl p-4 flex items-center gap-3 shadow-lg hover:scale-105 transition-transform cursor-default">
                                                         <div className="bg-white rounded-lg p-1 w-10 h-10 flex items-center justify-center">
@@ -541,4 +551,3 @@
     </script>
 </body>
 </html>
-
