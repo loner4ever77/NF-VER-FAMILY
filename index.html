@@ -357,8 +357,19 @@
                 showNotification('success', 'Đã sao chép liên kết!');
             };
             
+            // FIX: Like Logic Update - Now updates count!
             const handleLike = (id) => {
-                setPosts(currentPosts => currentPosts.map(p => p.id === id ? { ...p, isLiked: !p.isLiked } : p));
+                setPosts(currentPosts => currentPosts.map(p => {
+                    if (p.id === id) {
+                        const newIsLiked = !p.isLiked;
+                        return { 
+                            ...p, 
+                            isLiked: newIsLiked,
+                            likes: p.likes + (newIsLiked ? 1 : -1) // Increase if liking, decrease if unliking
+                        };
+                    }
+                    return p;
+                }));
             };
 
             const isLinkExpired = (() => {
@@ -523,4 +534,3 @@
     </script>
 </body>
 </html>
-
