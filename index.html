@@ -45,7 +45,7 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
-        const { useState, useEffect, memo, useLayoutEffect } = React;
+        const { useState, useEffect, memo, useLayoutEffect, useRef } = React;
 
         // --- CẤU HÌNH ---
         const EXPIRATION_MINUTES = 15;
@@ -221,8 +221,19 @@
             
             const [data, setData] = useState({ verificationLink: '', type: 'waiting', updatedAt: new Date().toISOString() });
             const [isDataLoaded, setIsDataLoaded] = useState(false);
-            
             const [dbInstance, setDbInstance] = useState(null);
+            
+            // State thời gian thực để cập nhật UI mỗi giây
+            const [now, setNow] = useState(Date.now());
+            const previousExpiredState = useRef(false);
+
+            // --- AUTO UPDATE CLOCK ---
+            useEffect(() => {
+                const timer = setInterval(() => {
+                    setNow(Date.now());
+                }, 1000);
+                return () => clearInterval(timer);
+            }, []);
 
             // --- AUTO SCROLL TOP FIX ---
             useLayoutEffect(() => {
@@ -294,8 +305,7 @@
 
             useEffect(() => {
                 const firebaseConfig = {
-                    // ⚠️⚠️⚠️ QUAN TRỌNG: PHẢI THAY LINK NÀY BẰNG LINK CỦA BẠN ⚠️⚠️⚠️
-                    // Nếu để nguyên YOUR_PROJECT_ID thì nó sẽ quay mãi không dừng đâu!
+                    // --- ĐÃ ĐIỀN LINK FIREBASE CỦA BẠN ---
                     databaseURL: "https://netflix-household-776de-default-rtdb.asia-southeast1.firebasedatabase.app/", 
                 };
                 try {
@@ -309,14 +319,13 @@
 
             useEffect(() => {
                 if (dbInstance && view === 'app') {
-                    // CƠ CHẾ AN TOÀN: Tự tắt loading sau 5 giây nếu mạng lag hoặc sai link
                     const safetyTimer = setTimeout(() => {
                         setIsDataLoaded(true);
                     }, 5000);
 
                     const dataRef = ref(dbInstance, 'netflix_data');
                     const unsubscribe = onValue(dataRef, (snapshot) => {
-                        clearTimeout(safetyTimer); // Hủy hẹn giờ nếu có dữ liệu về kịp
+                        clearTimeout(safetyTimer);
                         setIsDataLoaded(true);
                         
                         if (snapshot.exists()) {
@@ -327,10 +336,6 @@
                                 updatedAt: val.updatedAt || new Date().toISOString()
                             };
                             setData(newData);
-                            const diff = (new Date() - new Date(newData.updatedAt)) / 1000 / 60;
-                            if(newData.type === 'link_ready' && diff < EXPIRATION_MINUTES) {
-                                showNotification('success', '🔔 Có liên kết xác minh mới!');
-                            }
                         }
                     }, (error) => {
                         clearTimeout(safetyTimer);
@@ -397,13 +402,28 @@
                 }));
             };
 
+            // --- KIỂM TRA HẾT HẠN THEO THỜI GIAN THỰC (Nhờ biến 'now') ---
             const isLinkExpired = (() => {
                 try {
-                    const diff = new Date() - new Date(data.updatedAt);
+                    // Lấy thời gian hiện tại (cập nhật mỗi giây) trừ đi thời gian tạo link
+                    const diff = now - new Date(data.updatedAt).getTime();
                     return (diff / 1000 / 60) >= EXPIRATION_MINUTES;
                 } catch { return true; }
             })();
             
+            // --- TỰ ĐỘNG THÔNG BÁO KHI HẾT HẠN (Đã Fix Delay) ---
+            useEffect(() => {
+                if (data.type === 'link_ready' && isDataLoaded) {
+                    if (isLinkExpired && !previousExpiredState.current) {
+                        // FIX: Thêm delay 4s để tránh đè lên thông báo Login
+                        setTimeout(() => {
+                             showNotification('error', '⚠️ Link xác minh đã hết hạn!');
+                        }, 4000); 
+                    }
+                    previousExpiredState.current = isLinkExpired;
+                }
+            }, [isLinkExpired, data.type, isDataLoaded]);
+
             const isLinkReady = data.type === 'link_ready' && !isLinkExpired;
 
             return (
@@ -432,7 +452,6 @@
                                 
                                 {/* HEADER */}
                                 <div className="flex flex-col md:flex-row items-center justify-between mb-6 gap-4 relative z-20">
-                                    {/* Left */}
                                     <div className="flex items-center justify-between w-full md:w-auto">
                                          <div className="flex items-center gap-4">
                                             <NetflixLogo />
@@ -445,7 +464,6 @@
                                             <Icon name="log-out" size={18} className="text-white/60" />
                                          </button>
                                     </div>
-                                    {/* Center */}
                                     <div className="bg-white/5 p-1 rounded-full flex gap-1 border border-white/10">
                                         {['dashboard', 'events', 'blog'].map(tab => (
                                             <button key={tab} onClick={() => navigateTo(tab)} className={`px-6 py-2.5 rounded-full text-sm font-medium transition-all flex items-center gap-2 ${activeTab === tab ? 'bg-white text-black shadow-lg' : 'text-white/60 hover:text-white hover:bg-white/5'}`}>
@@ -454,7 +472,6 @@
                                             </button>
                                         ))}
                                     </div>
-                                    {/* Right */}
                                     <button onClick={handleLogout} className="hidden md:flex w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 items-center justify-center transition-colors">
                                         <Icon name="log-out" size={18} className="text-white/60" />
                                     </button>
@@ -463,7 +480,7 @@
                                 {activeTab === 'dashboard' && (
                                     <div className="grid grid-cols-1 md:grid-cols-12 gap-6 animate-enter">
                                         
-                                        {/* INFO PANEL (Order 1 on Mobile & Desktop) */}
+                                        {/* INFO PANEL */}
                                         <div className="md:col-span-4 order-1 md:order-1 h-full">
                                             <div className="glass-panel p-6 rounded-[32px] h-full flex flex-col justify-between">
                                                 <div>
@@ -491,7 +508,7 @@
                                             </div>
                                         </div>
 
-                                        {/* TOOL PANEL (Order 3 on Mobile, 2 on Desktop - next to Info) */}
+                                        {/* TOOL PANEL */}
                                         <div className="md:col-span-8 order-3 md:order-2 h-full">
                                             <div className="glass-panel p-8 rounded-[32px] flex flex-col justify-center items-center text-center relative overflow-hidden h-full min-h-[300px]">
                                                 <div className={`absolute inset-0 opacity-20 transition-all duration-1000 bg-gradient-to-br ${isLinkReady ? 'from-blue-600 to-purple-900' : 'from-red-600 to-black'}`}></div>
@@ -508,7 +525,18 @@
                                                                 {isLinkReady?'Link Ready':'System Active'}
                                                             </div>
                                                             
-                                                            {isLinkReady ? (<div className="animate-enter"><div className="bg-[#0a0a0a] border border-blue-500/30 rounded-2xl p-1 pl-4 flex items-center gap-4 mb-6 shadow-2xl shadow-blue-900/20"><Icon name="key" className="text-blue-400 shrink-0" size={20} /><div className="flex-1 truncate text-left"><div className="text-[10px] text-blue-500/50 font-bold uppercase tracking-wider">Secure Link</div><div className="text-sm text-blue-100 font-mono break-all w-full leading-tight">{data.verificationLink}</div></div><button onClick={handleCopy} className="p-3 bg-white/10 hover:bg-white/20 rounded-xl text-white transition-colors flex-shrink-0"><Icon name="copy" size={18} /></button></div><a href={data.verificationLink} target="_blank" className="block w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-2xl shadow-[0_0_40px_rgba(37,99,235,0.4)] hover:shadow-[0_0_60px_rgba(37,99,235,0.6)] transition-all active:scale-[0.98] flex items-center justify-center gap-2"><Icon name="external-link" size={20} /> Mở Link Xác Minh</a></div>) : (<div className={`py-8 border-2 border-dashed rounded-3xl flex flex-col items-center justify-center ${isLinkExpired&&data.type==='link_ready'?'border-yellow-500/30 bg-yellow-500/5':'border-white/10 bg-white/5'}`}><div className={`mb-3 p-3 rounded-full ${isLinkExpired&&data.type==='link_ready'?'bg-yellow-500/10 text-yellow-500':'bg-white/5 text-white/20'}`}><Icon name={isLinkExpired&&data.type==='link_ready'?'alert-triangle':'lock'} size={20} /></div><h3 className="text-white/50 font-bold text-base">{isLinkExpired&&data.type==='link_ready'?"Link đã hết hạn":"Đang chờ liên kết..."}</h3><p className="text-white/30 text-xs mt-1 max-w-xs mx-auto">{isLinkExpired&&data.type==='link_ready'?"Vui lòng gửi lại mail mới.":"Hệ thống đang quét mail..."}</p></div>)}
+                                                            {isLinkReady ? (<div className="animate-enter"><div className="bg-[#0a0a0a] border border-blue-500/30 rounded-2xl p-1 pl-4 flex items-center gap-4 mb-6 shadow-2xl shadow-blue-900/20"><Icon name="key" className="text-blue-400 shrink-0" size={20} /><div className="flex-1 truncate text-left"><div className="text-[10px] text-blue-500/50 font-bold uppercase tracking-wider">Secure Link</div><div className="text-sm text-blue-100 font-mono break-all w-full leading-tight">{data.verificationLink}</div></div><button onClick={handleCopy} className="p-3 bg-white/10 hover:bg-white/20 rounded-xl text-white transition-colors flex-shrink-0"><Icon name="copy" size={18} /></button></div><a href={data.verificationLink} target="_blank" className="block w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-2xl shadow-[0_0_40px_rgba(37,99,235,0.4)] hover:shadow-[0_0_60px_rgba(37,99,235,0.6)] transition-all active:scale-[0.98] flex items-center justify-center gap-2"><Icon name="external-link" size={20} /> Mở Link Xác Minh</a></div>) : (
+                                                                // UPDATED: EXPIRED LINK UI - BIGGER PADDING & NEW TEXT
+                                                                <div className={`py-12 px-6 border-2 border-dashed rounded-3xl flex flex-col items-center justify-center w-full ${isLinkExpired&&data.type==='link_ready'?'border-yellow-500/30 bg-yellow-500/5':'border-white/10 bg-white/5'}`}>
+                                                                    <div className={`mb-4 p-4 rounded-full ${isLinkExpired&&data.type==='link_ready'?'bg-yellow-500/10 text-yellow-500':'bg-white/5 text-white/20'}`}>
+                                                                        <Icon name={isLinkExpired&&data.type==='link_ready'?'alert-triangle':'lock'} size={32} />
+                                                                    </div>
+                                                                    <h3 className="text-white/60 font-bold text-xl mb-2">{isLinkExpired&&data.type==='link_ready'?"Link đã hết hạn":"Đang chờ liên kết..."}</h3>
+                                                                    <p className="text-white/40 text-sm max-w-xs mx-auto leading-relaxed">
+                                                                        {isLinkExpired&&data.type==='link_ready'?"Vui lòng làm theo hướng dẫn để gửi mail xác minh mới.":"Hệ thống đang quét mail..."}
+                                                                    </p>
+                                                                </div>
+                                                            )}
                                                             <div className="mt-6 flex items-center justify-center gap-2 text-xs text-white/30 font-mono"><Icon name="refresh-cw" size={12} className={!isLinkReady?'animate-spin':''} /> Cập nhật: {formatTime(data.updatedAt)}</div>
                                                         </>
                                                     )}
@@ -516,7 +544,7 @@
                                             </div>
                                         </div>
 
-                                        {/* GUIDE PANEL (Order 2 on Mobile - ABOVE TOOL, 3 on Desktop - Start of Row 2) */}
+                                        {/* GUIDE PANEL */}
                                         <div className="md:col-span-4 order-2 md:order-3 h-full">
                                             <div className="glass-panel p-6 rounded-[32px] h-full flex flex-col justify-center">
                                                 <div className="flex items-center gap-3 mb-6 text-blue-400">
@@ -542,39 +570,38 @@
                                             </div>
                                         </div>
 
-                                        {/* DONATE PANEL - REDESIGNED PREMIUM LOOK */}
+                                        {/* DONATE PANEL - PERSONAL EDITION */}
                                         <div className="md:col-span-8 order-4 md:order-4 h-full">
                                             <div className="glass-panel p-8 rounded-[32px] flex flex-col xl:flex-row items-center justify-between gap-8 h-full relative overflow-hidden group">
                                                 {/* Decorative Background */}
                                                 <div className="absolute top-0 right-0 w-64 h-64 bg-pink-500/10 rounded-full blur-3xl -mr-32 -mt-32 pointer-events-none group-hover:bg-pink-500/20 transition-colors duration-700"></div>
                                                 <div className="absolute bottom-0 left-0 w-64 h-64 bg-purple-500/10 rounded-full blur-3xl -ml-32 -mb-32 pointer-events-none group-hover:bg-purple-500/20 transition-colors duration-700"></div>
 
-                                                <div className="flex flex-col items-start gap-5 relative z-10 w-full xl:w-1/2">
-                                                    <div className="flex items-center gap-5">
-                                                        <div className="w-16 h-16 bg-gradient-to-br from-pink-500 to-rose-600 rounded-2xl flex items-center justify-center shadow-lg shadow-pink-500/20 group-hover:scale-110 transition-transform duration-500">
-                                                            <Icon name="heart" className="text-white fill-white w-8 h-8" />
-                                                        </div>
-                                                        <div>
-                                                            <h3 className="font-bold text-white text-xl">Ủng hộ tác giả</h3>
-                                                            <p className="text-white/50 text-sm mt-1">Một ly cà phê nhỏ, động lực to lớn.</p>
-                                                        </div>
+                                                {/* Left Side: Avatar + Quote + Info */}
+                                                <div className="flex flex-col items-center xl:items-start gap-4 relative z-10 w-full xl:w-1/2 text-center xl:text-left">
+                                                    <div className="flex items-center gap-4">
+                                                         {/* Avatar (Placeholder) */}
+                                                         <div className="w-16 h-16 rounded-full p-[2px] bg-gradient-to-tr from-yellow-400 via-red-500 to-purple-500 shrink-0">
+                                                             <img src="https://ui-avatars.com/api/?name=Admin&background=random" className="w-full h-full rounded-full object-cover border-2 border-black" />
+                                                         </div>
+                                                         <div>
+                                                             <div className="text-xs font-bold text-white/40 uppercase tracking-widest mb-1">Admin</div>
+                                                             <h3 className="font-bold text-white text-xl">Netflix Access Hub</h3>
+                                                         </div>
                                                     </div>
-                                                    
-                                                    {/* NEW: Server Goal Progress Bar */}
-                                                    <div className="w-full bg-white/5 rounded-full p-1 border border-white/10 mt-2">
-                                                        <div className="flex justify-between text-[10px] uppercase font-bold tracking-wider text-white/40 mb-1 px-1">
-                                                            <span>Server Goal</span>
-                                                            <span>78%</span>
-                                                        </div>
-                                                        <div className="h-2 w-full bg-white/10 rounded-full overflow-hidden">
-                                                            <div className="h-full bg-gradient-to-r from-pink-500 to-purple-500 w-[78%] rounded-full relative">
-                                                                <div className="absolute inset-0 bg-white/20 animate-pulse"></div>
-                                                            </div>
-                                                        </div>
-                                                        <div className="text-[10px] text-white/30 mt-1 px-1 italic">Cảm ơn 32 bạn đã donate tháng này!</div>
+
+                                                    {/* Quote Box */}
+                                                    <div className="bg-white/5 border border-white/10 rounded-2xl p-4 w-full relative">
+                                                         <Icon name="quote" size={24} className="text-white/20 absolute top-2 right-2" />
+                                                         <p className="text-white/80 italic font-medium">"Chia sẻ là niềm vui, donate là động lực. Cảm ơn các bạn đã đồng hành!"</p>
+                                                    </div>
+
+                                                    <div className="text-sm text-white/40">
+                                                        <span className="text-pink-500 font-bold">♥ Ủng hộ tác giả:</span> Duy trì server ổn định 24/7.
                                                     </div>
                                                 </div>
                                                 
+                                                {/* Right Side: Buttons */}
                                                 <div className="flex flex-col sm:flex-row gap-4 w-full xl:w-auto relative z-10">
                                                     {/* Momo Button - Expanded */}
                                                     <div className="flex-1 xl:flex-none bg-[#a50064] border border-white/10 rounded-2xl p-4 flex items-center gap-4 shadow-lg hover:shadow-pink-500/20 hover:-translate-y-1 transition-all cursor-default min-w-[200px] group/btn">
@@ -625,4 +652,3 @@
     </script>
 </body>
 </html>
-
