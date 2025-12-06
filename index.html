@@ -221,9 +221,10 @@
             
             const [data, setData] = useState({ verificationLink: '', type: 'waiting', updatedAt: new Date().toISOString() });
             const [isDataLoaded, setIsDataLoaded] = useState(false);
+            
             const [dbInstance, setDbInstance] = useState(null);
             
-            // State thời gian thực để cập nhật UI mỗi giây
+            // State thời gian thực để cập nhật UI mỗi giây (Cái bộ đếm thần thánh đây)
             const [now, setNow] = useState(Date.now());
             const previousExpiredState = useRef(false);
 
@@ -319,13 +320,14 @@
 
             useEffect(() => {
                 if (dbInstance && view === 'app') {
+                    // CƠ CHẾ AN TOÀN: Tự tắt loading sau 5 giây nếu mạng lag hoặc sai link
                     const safetyTimer = setTimeout(() => {
                         setIsDataLoaded(true);
                     }, 5000);
 
                     const dataRef = ref(dbInstance, 'netflix_data');
                     const unsubscribe = onValue(dataRef, (snapshot) => {
-                        clearTimeout(safetyTimer);
+                        clearTimeout(safetyTimer); // Hủy hẹn giờ nếu có dữ liệu về kịp
                         setIsDataLoaded(true);
                         
                         if (snapshot.exists()) {
@@ -336,6 +338,10 @@
                                 updatedAt: val.updatedAt || new Date().toISOString()
                             };
                             setData(newData);
+                            const diff = (new Date() - new Date(newData.updatedAt)) / 1000 / 60;
+                            if(newData.type === 'link_ready' && diff < EXPIRATION_MINUTES) {
+                                showNotification('success', '🔔 Có liên kết xác minh mới!');
+                            }
                         }
                     }, (error) => {
                         clearTimeout(safetyTimer);
@@ -411,11 +417,11 @@
                 } catch { return true; }
             })();
             
-            // --- TỰ ĐỘNG THÔNG BÁO KHI HẾT HẠN (Đã Fix Delay) ---
+            // --- TỰ ĐỘNG THÔNG BÁO KHI HẾT HẠN ---
             useEffect(() => {
                 if (data.type === 'link_ready' && isDataLoaded) {
                     if (isLinkExpired && !previousExpiredState.current) {
-                        // FIX: Thêm delay 4s để tránh đè lên thông báo Login
+                        // Delay 4s để không đè thông báo Login (nếu vừa login xong)
                         setTimeout(() => {
                              showNotification('error', '⚠️ Link xác minh đã hết hạn!');
                         }, 4000); 
@@ -452,6 +458,7 @@
                                 
                                 {/* HEADER */}
                                 <div className="flex flex-col md:flex-row items-center justify-between mb-6 gap-4 relative z-20">
+                                    {/* Left */}
                                     <div className="flex items-center justify-between w-full md:w-auto">
                                          <div className="flex items-center gap-4">
                                             <NetflixLogo />
@@ -464,6 +471,7 @@
                                             <Icon name="log-out" size={18} className="text-white/60" />
                                          </button>
                                     </div>
+                                    {/* Center */}
                                     <div className="bg-white/5 p-1 rounded-full flex gap-1 border border-white/10">
                                         {['dashboard', 'events', 'blog'].map(tab => (
                                             <button key={tab} onClick={() => navigateTo(tab)} className={`px-6 py-2.5 rounded-full text-sm font-medium transition-all flex items-center gap-2 ${activeTab === tab ? 'bg-white text-black shadow-lg' : 'text-white/60 hover:text-white hover:bg-white/5'}`}>
@@ -472,6 +480,7 @@
                                             </button>
                                         ))}
                                     </div>
+                                    {/* Right */}
                                     <button onClick={handleLogout} className="hidden md:flex w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 items-center justify-center transition-colors">
                                         <Icon name="log-out" size={18} className="text-white/60" />
                                     </button>
@@ -480,7 +489,7 @@
                                 {activeTab === 'dashboard' && (
                                     <div className="grid grid-cols-1 md:grid-cols-12 gap-6 animate-enter">
                                         
-                                        {/* INFO PANEL */}
+                                        {/* INFO PANEL (Order 1 on Mobile & Desktop) */}
                                         <div className="md:col-span-4 order-1 md:order-1 h-full">
                                             <div className="glass-panel p-6 rounded-[32px] h-full flex flex-col justify-between">
                                                 <div>
@@ -508,7 +517,7 @@
                                             </div>
                                         </div>
 
-                                        {/* TOOL PANEL */}
+                                        {/* TOOL PANEL (Order 3 on Mobile, 2 on Desktop - next to Info) */}
                                         <div className="md:col-span-8 order-3 md:order-2 h-full">
                                             <div className="glass-panel p-8 rounded-[32px] flex flex-col justify-center items-center text-center relative overflow-hidden h-full min-h-[300px]">
                                                 <div className={`absolute inset-0 opacity-20 transition-all duration-1000 bg-gradient-to-br ${isLinkReady ? 'from-blue-600 to-purple-900' : 'from-red-600 to-black'}`}></div>
@@ -526,7 +535,7 @@
                                                             </div>
                                                             
                                                             {isLinkReady ? (<div className="animate-enter"><div className="bg-[#0a0a0a] border border-blue-500/30 rounded-2xl p-1 pl-4 flex items-center gap-4 mb-6 shadow-2xl shadow-blue-900/20"><Icon name="key" className="text-blue-400 shrink-0" size={20} /><div className="flex-1 truncate text-left"><div className="text-[10px] text-blue-500/50 font-bold uppercase tracking-wider">Secure Link</div><div className="text-sm text-blue-100 font-mono break-all w-full leading-tight">{data.verificationLink}</div></div><button onClick={handleCopy} className="p-3 bg-white/10 hover:bg-white/20 rounded-xl text-white transition-colors flex-shrink-0"><Icon name="copy" size={18} /></button></div><a href={data.verificationLink} target="_blank" className="block w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-2xl shadow-[0_0_40px_rgba(37,99,235,0.4)] hover:shadow-[0_0_60px_rgba(37,99,235,0.6)] transition-all active:scale-[0.98] flex items-center justify-center gap-2"><Icon name="external-link" size={20} /> Mở Link Xác Minh</a></div>) : (
-                                                                // UPDATED: EXPIRED LINK UI - BIGGER PADDING & NEW TEXT
+                                                                // EXPIRED UI - UPDATED
                                                                 <div className={`py-12 px-6 border-2 border-dashed rounded-3xl flex flex-col items-center justify-center w-full ${isLinkExpired&&data.type==='link_ready'?'border-yellow-500/30 bg-yellow-500/5':'border-white/10 bg-white/5'}`}>
                                                                     <div className={`mb-4 p-4 rounded-full ${isLinkExpired&&data.type==='link_ready'?'bg-yellow-500/10 text-yellow-500':'bg-white/5 text-white/20'}`}>
                                                                         <Icon name={isLinkExpired&&data.type==='link_ready'?'alert-triangle':'lock'} size={32} />
@@ -544,7 +553,7 @@
                                             </div>
                                         </div>
 
-                                        {/* GUIDE PANEL */}
+                                        {/* GUIDE PANEL (Order 2 on Mobile - ABOVE TOOL, 3 on Desktop - Start of Row 2) */}
                                         <div className="md:col-span-4 order-2 md:order-3 h-full">
                                             <div className="glass-panel p-6 rounded-[32px] h-full flex flex-col justify-center">
                                                 <div className="flex items-center gap-3 mb-6 text-blue-400">
@@ -570,7 +579,7 @@
                                             </div>
                                         </div>
 
-                                        {/* DONATE PANEL - PERSONAL EDITION */}
+                                        {/* DONATE PANEL - MERGED WITH ADMIN & AVATAR */}
                                         <div className="md:col-span-8 order-4 md:order-4 h-full">
                                             <div className="glass-panel p-8 rounded-[32px] flex flex-col xl:flex-row items-center justify-between gap-8 h-full relative overflow-hidden group">
                                                 {/* Decorative Background */}
@@ -602,26 +611,40 @@
                                                 </div>
                                                 
                                                 {/* Right Side: Buttons */}
-                                                <div className="flex flex-col sm:flex-row gap-4 w-full xl:w-auto relative z-10">
-                                                    {/* Momo Button - Expanded */}
-                                                    <div className="flex-1 xl:flex-none bg-[#a50064] border border-white/10 rounded-2xl p-4 flex items-center gap-4 shadow-lg hover:shadow-pink-500/20 hover:-translate-y-1 transition-all cursor-default min-w-[200px] group/btn">
-                                                        <div className="bg-white rounded-xl p-1.5 w-12 h-12 flex items-center justify-center shrink-0">
-                                                            <img src="https://upload.wikimedia.org/wikipedia/vi/f/fe/MoMo_Logo.png" className="w-full h-full object-contain" />
+                                                <div className="flex flex-col sm:flex-row gap-4 w-full xl:w-auto relative z-10 items-center xl:items-end">
+                                                    
+                                                    {/* Donate Info (Clean) */}
+                                                    <div className="flex items-center gap-4 justify-center xl:justify-end mb-2">
+                                                        <div className="text-right">
+                                                            <h3 className="font-bold text-white text-lg leading-tight">Ủng hộ tác giả</h3>
+                                                            <p className="text-xs text-white/40 mt-0.5">Duy trì server hoạt động ổn định 24/7</p>
                                                         </div>
-                                                        <div>
-                                                            <div className="text-[10px] text-white/60 uppercase font-bold tracking-wider mb-0.5">MOMO</div>
-                                                            <div className="text-base font-mono text-white font-bold tracking-wide">090xxxxxxx</div>
+                                                        <div className="w-12 h-12 bg-gradient-to-br from-pink-500 to-rose-600 rounded-xl flex items-center justify-center shadow-lg shadow-pink-500/20 shrink-0">
+                                                            <Icon name="heart" className="text-white fill-white w-6 h-6" />
                                                         </div>
                                                     </div>
 
-                                                    {/* MB Bank Button - Expanded */}
-                                                    <div className="flex-1 xl:flex-none bg-[#10069f] border border-white/10 rounded-2xl p-4 flex items-center gap-4 shadow-lg hover:shadow-blue-500/20 hover:-translate-y-1 transition-all cursor-default min-w-[200px] group/btn">
-                                                        <div className="bg-white rounded-xl p-1.5 w-12 h-12 flex items-center justify-center shrink-0">
-                                                             <img src="https://upload.wikimedia.org/wikipedia/commons/2/25/Logo_MB_new.png" className="w-full h-full object-contain" />
+                                                    <div className="flex flex-col sm:flex-row gap-4 w-full">
+                                                        {/* Momo Button - Expanded */}
+                                                        <div className="flex-1 xl:flex-none bg-[#a50064] border border-white/10 rounded-2xl p-4 flex items-center gap-4 shadow-lg hover:shadow-pink-500/20 hover:-translate-y-1 transition-all cursor-default min-w-[200px] group/btn">
+                                                            <div className="bg-white rounded-xl p-1.5 w-12 h-12 flex items-center justify-center shrink-0">
+                                                                <img src="https://upload.wikimedia.org/wikipedia/vi/f/fe/MoMo_Logo.png" className="w-full h-full object-contain" />
+                                                            </div>
+                                                            <div>
+                                                                <div className="text-[10px] text-white/60 uppercase font-bold tracking-wider mb-0.5">MOMO</div>
+                                                                <div className="text-base font-mono text-white font-bold tracking-wide">090xxxxxxx</div>
+                                                            </div>
                                                         </div>
-                                                        <div>
-                                                            <div className="text-[10px] text-white/60 uppercase font-bold tracking-wider mb-0.5">MB BANK</div>
-                                                            <div className="text-base font-mono text-white font-bold tracking-wide">123456789</div>
+
+                                                        {/* MB Bank Button - Expanded */}
+                                                        <div className="flex-1 xl:flex-none bg-[#10069f] border border-white/10 rounded-2xl p-4 flex items-center gap-4 shadow-lg hover:shadow-blue-500/20 hover:-translate-y-1 transition-all cursor-default min-w-[200px] group/btn">
+                                                            <div className="bg-white rounded-xl p-1.5 w-12 h-12 flex items-center justify-center shrink-0">
+                                                                 <img src="https://upload.wikimedia.org/wikipedia/commons/2/25/Logo_MB_new.png" className="w-full h-full object-contain" />
+                                                            </div>
+                                                            <div>
+                                                                <div className="text-[10px] text-white/60 uppercase font-bold tracking-wider mb-0.5">MB BANK</div>
+                                                                <div className="text-base font-mono text-white font-bold tracking-wide">123456789</div>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 </div>
