@@ -15,10 +15,12 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;900&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
 
     <style>
-        body { font-family: 'Inter', sans-serif; background-color: #000000; color: white; overflow-x: hidden; -webkit-tap-highlight-color: transparent; }
+        body { font-family: 'Inter', sans-serif; background-color: #050505; color: white; overflow-x: hidden; -webkit-tap-highlight-color: transparent; }
         
         .glass-panel {
-            background: rgba(20, 20, 20, 0.9);
+            background: rgba(22, 22, 22, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
             border: 1px solid rgba(255, 255, 255, 0.08);
             transform: translate3d(0, 0, 0); 
             will-change: transform, opacity;
@@ -72,18 +74,19 @@
         );
 
         const Icon = ({ name, size = 24, className = "" }) => {
-            try {
-                const iconKey = name.split('-').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join('');
-                if (window.lucide && window.lucide.icons && window.lucide.icons[iconKey]) {
-                    const iconData = window.lucide.icons[iconKey];
-                    return (
-                        <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`lucide lucide-${name} ${className}`}>
-                            {iconData.map((child, index) => React.createElement(child[0], { ...child[1], key: index }))}
-                        </svg>
-                    );
-                }
-            } catch (e) {}
-            return <i className={className} style={{width: size, height: size}}></i>;
+            const iconKey = name.split('-').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join('');
+            if (lucide.icons && lucide.icons[iconKey]) {
+                const iconData = lucide.icons[iconKey];
+                return (
+                    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`lucide lucide-${name} ${className}`}>
+                        {iconData.map((child, index) => {
+                            const [tag, attrs] = child;
+                            return React.createElement(tag, { ...attrs, key: index });
+                        })}
+                    </svg>
+                );
+            }
+            return <i data-lucide={name} style={{ width: size, height: size }} className={className}></i>;
         };
 
         // === EVENT COMPONENTS ===
@@ -223,8 +226,6 @@
             // State thời gian thực để cập nhật UI mỗi giây
             const [now, setNow] = useState(Date.now());
             const previousExpiredState = useRef(false);
-            const isNotificationBlocked = useRef(false);
-            const lastNotifiedTime = useRef(null);
 
             // --- AUTO UPDATE CLOCK ---
             useEffect(() => {
@@ -273,7 +274,7 @@
                 window.location.hash = tabName;
             };
 
-            // BLOG DATA - FULL 3 POSTS
+            // BLOG DATA
             const AVATAR_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e6/240527_Aespa_Ningning.jpg/640px-240527_Aespa_Ningning.jpg";
             const [posts, setPosts] = useState([
                 { 
@@ -293,7 +294,6 @@
                 }
             ]);
 
-            // EVENTS DATA - FULL 6 EVENTS
             const UPCOMING_EVENTS = [
                 { id: 1, name: "Giáng Sinh 2025", date: "2025-12-25T00:00:00", iconStr: "gift", color: "from-green-500 to-emerald-700", desc: "Jingle bells..." },
                 { id: 2, name: "Tết Dương Lịch", date: "2026-01-01T00:00:00", iconStr: "party-popper", color: "from-blue-500 to-indigo-700", desc: "Chào đón năm mới" },
@@ -336,17 +336,6 @@
                                 updatedAt: val.updatedAt || new Date().toISOString()
                             };
                             setData(newData);
-
-                            // --- LOGIC THÔNG BÁO LINK MỚI ---
-                            const diff = (new Date() - new Date(newData.updatedAt)) / 1000 / 60;
-                            if(newData.type === 'link_ready' && diff < EXPIRATION_MINUTES) {
-                                if (lastNotifiedTime.current !== newData.updatedAt) {
-                                    if (!isNotificationBlocked.current) {
-                                        showNotification('success', '🔔 Có liên kết xác minh mới!');
-                                        lastNotifiedTime.current = newData.updatedAt;
-                                    }
-                                }
-                            }
                         }
                     }, (error) => {
                         clearTimeout(safetyTimer);
@@ -366,23 +355,18 @@
                 setTimeout(() => setToast(null), 3000);
             };
 
+            // --- FIX RESET TRẠNG THÁI KHI LOGIN ---
             const handleLogin = (e) => {
                 e.preventDefault();
                 setIsAuthenticating(true);
                 setTimeout(() => {
                     if (username === DEMO_USER && password === DEMO_PASS) {
                         localStorage.setItem('netflix_auth_token', 'true');
-                        // Reset notification state
-                        previousExpiredState.current = false;
-                        lastNotifiedTime.current = null;
-                        isNotificationBlocked.current = true; // Block expired msg for 4s
-                        
+                        // Reset trạng thái báo lỗi cũ để tránh block
+                        previousExpiredState.current = false; 
                         window.location.hash = 'dashboard';
                         setView('app');
                         showNotification('success', 'Đăng nhập thành công');
-                        
-                        setTimeout(() => { isNotificationBlocked.current = false; }, 4000);
-
                     } else {
                         showNotification('error', 'Sai mật khẩu! (admin/2025)');
                     }
@@ -390,9 +374,10 @@
                 }, 1000);
             };
             
+            // --- FIX RESET TRẠNG THÁI KHI LOGOUT ---
             const handleLogout = () => {
                 localStorage.removeItem('netflix_auth_token');
-                // Reset data
+                // Reset sạch dữ liệu
                 setData({ verificationLink: '', type: 'waiting', updatedAt: new Date().toISOString() });
                 setIsDataLoaded(false);
                 previousExpiredState.current = false;
@@ -434,19 +419,14 @@
                 } catch { return true; }
             })();
             
-            // --- THÔNG BÁO HẾT HẠN (Đã Fix Delay) ---
+            // --- TỰ ĐỘNG THÔNG BÁO KHI HẾT HẠN (Đã Fix Delay) ---
             useEffect(() => {
                 if (data.type === 'link_ready' && isDataLoaded) {
                     if (isLinkExpired && !previousExpiredState.current) {
-                        // Nếu đang bị chặn (vừa login), đợi 4s rồi báo
-                        if (isNotificationBlocked.current) {
-                             setTimeout(() => {
-                                 showNotification('error', '⚠️ Link xác minh đã hết hạn!');
-                             }, 4000);
-                        } else {
-                             // Nếu không bị chặn, báo luôn
+                        // FIX: Thêm delay 4s để tránh đè lên thông báo Login
+                        setTimeout(() => {
                              showNotification('error', '⚠️ Link xác minh đã hết hạn!');
-                        }
+                        }, 4000); 
                     }
                     previousExpiredState.current = isLinkExpired;
                 }
@@ -508,9 +488,8 @@
                                 {activeTab === 'dashboard' && (
                                     <div className="grid grid-cols-1 md:grid-cols-12 gap-6 animate-enter">
                                         
-                                        {/* LEFT COLUMN: INFO + GUIDE */}
-                                        <div className="md:col-span-4 flex flex-col gap-6 h-full">
-                                            {/* INFO PANEL */}
+                                        {/* INFO PANEL (Order 1 on Mobile & Desktop) */}
+                                        <div className="md:col-span-4 order-1 md:order-1 h-full">
                                             <div className="glass-panel p-6 rounded-[32px] h-full flex flex-col justify-between">
                                                 <div>
                                                     <div className="flex items-center gap-3 mb-4 text-purple-400">
@@ -535,8 +514,49 @@
                                                     </div>
                                                 </div>
                                             </div>
-                                            {/* GUIDE PANEL */}
-                                            <div className="glass-panel p-6 rounded-[32px] flex-1">
+                                        </div>
+
+                                        {/* TOOL PANEL (Order 3 on Mobile, 2 on Desktop - next to Info) */}
+                                        <div className="md:col-span-8 order-3 md:order-2 h-full">
+                                            <div className="glass-panel p-8 rounded-[32px] flex flex-col justify-center items-center text-center relative overflow-hidden h-full min-h-[300px]">
+                                                <div className={`absolute inset-0 opacity-20 transition-all duration-1000 bg-gradient-to-br ${isLinkReady ? 'from-blue-600 to-purple-900' : 'from-red-600 to-black'}`}></div>
+                                                <div className="relative z-10 w-full max-w-md">
+                                                    {!isDataLoaded ? (
+                                                        <div className="flex flex-col items-center justify-center">
+                                                            <Icon name="loader-2" className="animate-spin text-white/30" size={32} />
+                                                            <p className="text-white/30 text-sm mt-4 font-mono">Đang đồng bộ dữ liệu...</p>
+                                                        </div>
+                                                    ) : (
+                                                        <>
+                                                            <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full border text-xs font-bold uppercase tracking-wider shadow-lg mb-6 ${isLinkReady ? 'bg-blue-500/20 border-blue-500/30 text-blue-300' : 'bg-green-500/10 border-green-500/20 text-green-400 shadow-[0_0_20px_rgba(74,222,128,0.1)]'}`}>
+                                                                <Icon name={isLinkReady?'zap':'shield-check'} size={14} className={isLinkReady?'fill-blue-300 animate-pulse':'text-green-400'} />
+                                                                {isLinkReady?'Link Ready':'System Active'}
+                                                            </div>
+                                                            
+                                                            {isLinkReady ? (<div className="animate-enter"><div className="bg-[#0a0a0a] border border-blue-500/30 rounded-2xl p-1 pl-4 flex items-center gap-4 mb-6 shadow-2xl shadow-blue-900/20"><Icon name="key" className="text-blue-400 shrink-0" size={20} /><div className="flex-1 truncate text-left"><div className="text-[10px] text-blue-500/50 font-bold uppercase tracking-wider">Secure Link</div><div className="text-sm text-blue-100 font-mono w-full whitespace-nowrap overflow-x-auto pb-1" style={{scrollbarWidth: 'none', msOverflowStyle: 'none'}}>
+    {data.verificationLink}
+</div></div><button onClick={handleCopy} className="p-3 bg-white/10 hover:bg-white/20 rounded-xl text-white transition-colors flex-shrink-0"><Icon name="copy" size={18} /></button></div><a href={data.verificationLink} target="_blank" className="block w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-2xl shadow-[0_0_40px_rgba(37,99,235,0.4)] hover:shadow-[0_0_60px_rgba(37,99,235,0.6)] transition-all active:scale-[0.98] flex items-center justify-center gap-2"><Icon name="external-link" size={20} /> Mở Link Xác Minh</a></div>) : (
+                                                                // EXPIRED UI - UPDATED
+                                                                <div className={`py-12 px-6 border-2 border-dashed rounded-3xl flex flex-col items-center justify-center w-full ${isLinkExpired&&data.type==='link_ready'?'border-yellow-500/30 bg-yellow-500/5':'border-white/10 bg-white/5'}`}>
+                                                                    <div className={`mb-4 p-4 rounded-full ${isLinkExpired&&data.type==='link_ready'?'bg-yellow-500/10 text-yellow-500':'bg-white/5 text-white/20'}`}>
+                                                                        <Icon name={isLinkExpired&&data.type==='link_ready'?'alert-triangle':'lock'} size={32} />
+                                                                    </div>
+                                                                    <h3 className="text-white/60 font-bold text-xl mb-2">{isLinkExpired&&data.type==='link_ready'?"Link đã hết hạn":"Đang chờ liên kết..."}</h3>
+                                                                    <p className="text-white/40 text-sm max-w-xs mx-auto leading-relaxed">
+                                                                        {isLinkExpired&&data.type==='link_ready'?"Vui lòng làm theo hướng dẫn để gửi mail xác minh mới.":"Hệ thống đang quét mail..."}
+                                                                    </p>
+                                                                </div>
+                                                            )}
+                                                            <div className="mt-6 flex items-center justify-center gap-2 text-xs text-white/30 font-mono"><Icon name="refresh-cw" size={12} className={!isLinkReady?'animate-spin':''} /> Cập nhật: {formatTime(data.updatedAt)}</div>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* GUIDE PANEL (Order 2 on Mobile - ABOVE TOOL, 3 on Desktop - Start of Row 2) */}
+                                        <div className="md:col-span-4 order-2 md:order-3 h-full">
+                                            <div className="glass-panel p-6 rounded-[32px] h-full flex flex-col justify-center">
                                                 <div className="flex items-center gap-3 mb-6 text-blue-400">
                                                     <div className="p-2 bg-blue-500/10 rounded-lg"><Icon name="book-open" size={20} /></div>
                                                     <h2 className="font-bold text-lg text-white">Hướng dẫn</h2>
@@ -544,9 +564,9 @@
                                                 <div className="space-y-8 relative pl-2">
                                                     <div className="absolute left-[15px] top-2 bottom-2 w-[2px] bg-white/5"></div>
                                                     {[
-                                                        {icon:'tv',color:'text-blue-400',t:'Bước 1: Gửi yêu cầu',d:'Trên Tivi, chọn "Cập nhật Hộ gia đình" -> "Gửi Email".'},
-                                                        {icon:'loader-2',color:'text-yellow-400',t:'Bước 2: Chờ hệ thống',d:'Ngồi đợi khoảng 1 phút tại trang này (không cần F5).'},
-                                                        {icon:'check-circle-2',color:'text-green-400',t:'Bước 3: Xác nhận',d:'Khi nút Xanh hiện lên, bấm vào link -> Chọn "Có, là tôi".'}
+                                                        {icon:'tv',color:'text-blue-400',t:'Bước 1: Gửi yêu cầu',d:'Trên Tivi, bấm "Cập nhật Hộ gia đình" (Update Household) rồi chọn "Gửi Email" (Send Email).'},
+                                                        {icon:'loader-2',color:'text-yellow-400',t:'Bước 2: Chờ hàng về',d:'Ngồi im tại đây khoảng 1 phút. Hệ thống tự động bắt link từ mail, không cần F5.'},
+                                                        {icon:'check-circle-2',color:'text-green-400',t:'Bước 3: Chốt đơn',d:'Khi nút "Link Ready" sáng lên, bấm vào rồi chọn "Có, là tôi" (Yes, it was me) là xong phim.'}
                                                     ].map((s,i)=>(
                                                         <div key={i} className="relative pl-12">
                                                             <div className={`absolute left-0 top-0 w-8 h-8 rounded-full bg-white/5 border border-white/10 flex items-center justify-center ${s.color}`}>
@@ -560,76 +580,50 @@
                                             </div>
                                         </div>
 
-                                        {/* RIGHT COLUMN: TOOL + ADMIN/DONATE */}
-                                        <div className="md:col-span-8 flex flex-col gap-6 h-full">
-                                            {/* TOOL PANEL */}
-                                            <div className="glass-panel p-8 rounded-[32px] flex flex-col justify-center items-center text-center relative overflow-hidden flex-1 min-h-[300px]">
-                                                <div className={`absolute inset-0 opacity-20 transition-all duration-1000 bg-gradient-to-br ${isLinkReady ? 'from-blue-600 to-purple-900' : 'from-red-600 to-black'}`}></div>
-                                                <div className="relative z-10 w-full max-w-md">
-                                                    {!isDataLoaded ? (
-                                                        <div className="flex flex-col items-center justify-center">
-                                                            <Icon name="loader-2" className="animate-spin text-white/30" size={32} />
-                                                            <p className="text-white/30 text-sm mt-4 font-mono">Đang đồng bộ dữ liệu...</p>
-                                                        </div>
-                                                    ) : (
-                                                        <>
-                                                            <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full border text-xs font-bold uppercase tracking-wider shadow-lg mb-6 ${isLinkReady ? 'bg-blue-500/20 border-blue-500/30 text-blue-300' : 'bg-green-500/10 border-green-500/20 text-green-400 shadow-[0_0_20px_rgba(74,222,128,0.1)]'}`}><Icon name={isLinkReady?'zap':'shield-check'} size={14} className={isLinkReady?'fill-blue-300 animate-pulse':'text-green-400'} />{isLinkReady?'Link Ready':'System Active'}</div>
-                                                            
-                                                            {isLinkReady ? (
-                                                                <div className="animate-enter"><div className="bg-[#0a0a0a] border border-blue-500/30 rounded-2xl p-1 pl-4 flex items-center gap-4 mb-6 shadow-2xl shadow-blue-900/20"><Icon name="key" className="text-blue-400 shrink-0" size={20} /><div className="flex-1 truncate text-left"><div className="text-[10px] text-blue-500/50 font-bold uppercase tracking-wider">Secure Link</div><div className="text-sm text-blue-100 font-mono w-full whitespace-nowrap overflow-x-auto pb-1" style={{scrollbarWidth: 'none', msOverflowStyle: 'none'}}>{data.verificationLink}</div></div><button onClick={handleCopy} className="p-3 bg-white/10 hover:bg-white/20 rounded-xl text-white transition-colors flex-shrink-0"><Icon name="copy" size={18} /></button></div><a href={data.verificationLink} target="_blank" className="block w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-2xl shadow-[0_0_40px_rgba(37,99,235,0.4)] hover:shadow-[0_0_60px_rgba(37,99,235,0.6)] transition-all active:scale-[0.98] flex items-center justify-center gap-2"><Icon name="external-link" size={20} /> Mở Link Xác Minh</a></div>
-                                                            ) : (
-                                                                <div className={`py-12 px-6 border-2 border-dashed rounded-3xl flex flex-col items-center justify-center w-full ${isLinkExpired&&data.type==='link_ready'?'border-yellow-500/30 bg-yellow-500/5':'border-white/10 bg-white/5'}`}>
-                                                                    <div className={`mb-4 p-4 rounded-full ${isLinkExpired&&data.type==='link_ready'?'bg-yellow-500/10 text-yellow-500':'bg-white/5 text-white/20'}`}>
-                                                                        <Icon name={isLinkExpired&&data.type==='link_ready'?'alert-triangle':'lock'} size={32} />
-                                                                    </div>
-                                                                    <h3 className="text-white/60 font-bold text-xl mb-2">{isLinkExpired&&data.type==='link_ready'?"Link đã hết hạn":"Đang chờ liên kết..."}</h3>
-                                                                    <p className="text-white/40 text-sm max-w-xs mx-auto leading-relaxed">{isLinkExpired&&data.type==='link_ready'?"Vui lòng làm theo hướng dẫn để gửi mail xác minh mới.":"Hệ thống đang quét mail..."}</p>
-                                                                </div>
-                                                            )}
-                                                            <div className="mt-6 flex items-center justify-center gap-2 text-xs text-white/30 font-mono"><Icon name="refresh-cw" size={12} className={!isLinkReady?'animate-spin':''} /> Cập nhật: {formatTime(data.updatedAt)}</div>
-                                                        </>
-                                                    )}
-                                                </div>
-                                            </div>
-
-                                            {/* ADMIN & DONATE PANEL (MERGED) */}
+                                        {/* DONATE PANEL - MERGED WITH ADMIN & AVATAR (Order 4 on Mobile & Desktop) */}
+                                        <div className="md:col-span-8 order-4 md:order-4 h-full">
                                             <div className="glass-panel p-8 rounded-[32px] flex flex-col xl:flex-row items-center justify-between gap-8 h-full relative overflow-hidden group">
+                                                {/* Decorative Background */}
                                                 <div className="absolute top-0 right-0 w-64 h-64 bg-pink-500/10 rounded-full blur-3xl -mr-32 -mt-32 pointer-events-none group-hover:bg-pink-500/20 transition-colors duration-700"></div>
                                                 <div className="absolute bottom-0 left-0 w-64 h-64 bg-purple-500/10 rounded-full blur-3xl -ml-32 -mb-32 pointer-events-none group-hover:bg-purple-500/20 transition-colors duration-700"></div>
-                                                
-                                                {/* Left: Admin */}
+
+                                                {/* Left Side: Avatar + Quote + Info */}
                                                 <div className="flex flex-col items-center xl:items-start gap-4 relative z-10 w-full xl:w-1/2 text-center xl:text-left">
                                                     <div className="flex items-center gap-4">
-                                                        <div className="w-16 h-16 rounded-full p-[2px] bg-gradient-to-tr from-yellow-400 via-red-500 to-purple-500 shrink-0">
-                                                            <img src="https://ui-avatars.com/api/?name=Admin&background=random" className="w-full h-full rounded-full object-cover border-2 border-black" />
-                                                        </div>
-                                                        <div>
-                                                            <div className="text-xs font-bold text-white/40 uppercase tracking-widest mb-1">Admin</div>
-                                                            <h3 className="font-bold text-white text-xl">Netflix Access Hub</h3>
-                                                        </div>
+                                                         {/* Avatar (Placeholder) */}
+                                                         <div className="w-16 h-16 rounded-full p-[2px] bg-gradient-to-tr from-yellow-400 via-red-500 to-purple-500 shrink-0">
+                                                             <img src="https://ui-avatars.com/api/?name=Admin&background=random" className="w-full h-full rounded-full object-cover border-2 border-black" />
+                                                         </div>
+                                                         <div>
+                                                             <div className="text-xs font-bold text-white/40 uppercase tracking-widest mb-1">Admin</div>
+                                                             <h3 className="font-bold text-white text-xl">Netflix Access Hub</h3>
+                                                         </div>
                                                     </div>
+
+                                                    {/* Quote Box */}
                                                     <div className="bg-white/5 border border-white/10 rounded-2xl p-4 w-full relative">
-                                                        <Icon name="quote" size={24} className="text-white/20 absolute top-2 right-2" />
-                                                        <p className="text-white/80 italic font-medium">"Chia sẻ là niềm vui, donate là động lực. Cảm ơn các bạn đã đồng hành!"</p>
+                                                         <Icon name="quote" size={24} className="text-white/20 absolute top-2 right-2" />
+                                                         <p className="text-white/80 italic font-medium">"Chia sẻ là niềm vui, donate là động lực. Cảm ơn các bạn đã đồng hành!"</p>
                                                     </div>
                                                 </div>
                                                 
-                                                {/* Divider */}
-                                                <div className="hidden xl:block w-[1px] h-32 bg-white/10"></div>
-
-                                                {/* Right: Donate */}
+                                                {/* Right Side: Buttons & Donate Info */}
                                                 <div className="flex flex-col gap-5 w-full xl:w-auto relative z-10 items-center xl:items-end">
-                                                    <div className="flex items-center gap-4 justify-center xl:justify-start w-full xl:w-auto">
-                                                        <div className="w-12 h-12 bg-gradient-to-br from-pink-500 to-rose-600 rounded-xl flex items-center justify-center shadow-lg shadow-pink-500/20 shrink-0">
-                                                            <Icon name="heart" className="text-white fill-white w-6 h-6" />
-                                                        </div>
-                                                        <div className="text-left">
+                                                    
+                                                    {/* Donate Info (Clean) */}
+                                                    <div className="flex items-center gap-4 justify-center xl:justify-end">
+                                                        <div className="text-right">
                                                             <h3 className="font-bold text-white text-lg leading-tight">Ủng hộ tác giả</h3>
                                                             <p className="text-xs text-white/40 mt-0.5">Duy trì server hoạt động ổn định 24/7</p>
                                                         </div>
+                                                        <div className="w-12 h-12 bg-gradient-to-br from-pink-500 to-rose-600 rounded-xl flex items-center justify-center shadow-lg shadow-pink-500/20 shrink-0">
+                                                            <Icon name="heart" className="text-white fill-white w-6 h-6" />
+                                                        </div>
                                                     </div>
+
                                                     <div className="flex flex-col sm:flex-row gap-4 w-full">
-                                                        <div className="flex-1 bg-[#a50064] border border-white/10 rounded-2xl p-4 flex items-center gap-4 shadow-lg hover:shadow-pink-500/20 hover:-translate-y-1 transition-all cursor-default min-w-[200px] group/btn">
+                                                        {/* Momo Button - Expanded */}
+                                                        <div className="flex-1 xl:flex-none bg-[#a50064] border border-white/10 rounded-2xl p-4 flex items-center gap-4 shadow-lg hover:shadow-pink-500/20 hover:-translate-y-1 transition-all cursor-default min-w-[200px] group/btn">
                                                             <div className="bg-white rounded-xl p-1.5 w-12 h-12 flex items-center justify-center shrink-0">
                                                                 <img src="https://upload.wikimedia.org/wikipedia/vi/f/fe/MoMo_Logo.png" className="w-full h-full object-contain" />
                                                             </div>
@@ -638,7 +632,9 @@
                                                                 <div className="text-base font-mono text-white font-bold tracking-wide">090xxxxxxx</div>
                                                             </div>
                                                         </div>
-                                                        <div className="flex-1 bg-[#10069f] border border-white/10 rounded-2xl p-4 flex items-center gap-4 shadow-lg hover:shadow-blue-500/20 hover:-translate-y-1 transition-all cursor-default min-w-[200px] group/btn">
+
+                                                        {/* MB Bank Button - Expanded */}
+                                                        <div className="flex-1 xl:flex-none bg-[#10069f] border border-white/10 rounded-2xl p-4 flex items-center gap-4 shadow-lg hover:shadow-blue-500/20 hover:-translate-y-1 transition-all cursor-default min-w-[200px] group/btn">
                                                             <div className="bg-white rounded-xl p-1.5 w-12 h-12 flex items-center justify-center shrink-0">
                                                                  <img src="https://upload.wikimedia.org/wikipedia/commons/2/25/Logo_MB_new.png" className="w-full h-full object-contain" />
                                                             </div>
